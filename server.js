@@ -5,7 +5,6 @@ const sql = require("mssql");
 
 const app = express();
 
-// ✅ Allow POST + PATCH (fix earlier CORS issue)
 app.use(cors({
   origin: "*",
   methods: ["GET", "POST", "PATCH"],
@@ -27,7 +26,9 @@ const config = {
   }
 };
 
-// ✅ SINGLE GLOBAL POOL
+// =======================
+// SINGLE GLOBAL POOL
+// =======================
 let pool;
 
 async function getPool() {
@@ -47,7 +48,7 @@ app.get("/", (req, res) => {
   res.send("API working ✅");
 });
 
-// ✅ LEADERBOARD (now reads from user_state = your real system)
+// ✅ ✅ FIXED LEADERBOARD (uses wallet - stable)
 app.get("/profile", async (req, res) => {
   try {
     console.log("📊 Fetching leaderboard");
@@ -60,17 +61,17 @@ app.get("/profile", async (req, res) => {
         p.display_name,
         p.username,
 
-        -- ✅ USE REAL STORED VALUES (not broken profile table)
-        CAST(ISNULL(JSON_VALUE(us.data, '$.woolPoints'), 0) AS INT) AS wool_points,
-        CAST(ISNULL(JSON_VALUE(us.data, '$.treePoints'), 0) AS INT) AS tree_points,
+        -- ✅ USE WALLET (real data source)
+        ISNULL(uw.wool_points, 0) AS wool_points,
+        ISNULL(uw.tree_points, 0) AS tree_points,
 
         -- ✅ TOTAL
-        CAST(ISNULL(JSON_VALUE(us.data, '$.woolPoints'), 0) AS INT)
-        + CAST(ISNULL(JSON_VALUE(us.data, '$.treePoints'), 0) AS INT)
-        AS total_points
+        ISNULL(uw.wool_points, 0) + ISNULL(uw.tree_points, 0) AS total_points
 
       FROM profiles p
-      LEFT JOIN user_state us ON p.user_id = us.user_id
+
+      LEFT JOIN user_wallet uw 
+        ON p.user_id = uw.user_id
 
       ORDER BY total_points DESC
     `);
@@ -83,7 +84,7 @@ app.get("/profile", async (req, res) => {
   }
 });
 
-// ✅ SAVE PROFILE (unchanged)
+// ✅ SAVE PROFILE (safer version - removed broken columns)
 app.post("/profile", async (req, res) => {
   try {
     const { user_id, display_name, username, account_type } = req.body;
@@ -105,8 +106,8 @@ app.post("/profile", async (req, res) => {
             username = @username,
             account_type = @account_type
         WHEN NOT MATCHED THEN
-          INSERT (user_id, display_name, username, account_type, wool_points, tree_points)
-          VALUES (@user_id, @display_name, @username, @account_type, 0, 0);
+          INSERT (user_id, display_name, username, account_type)
+          VALUES (@user_id, @display_name, @username, @account_type);
       `);
 
     res.json({ success: true });
@@ -117,7 +118,7 @@ app.post("/profile", async (req, res) => {
   }
 });
 
-// ✅ 🔥 ONE-TIME FIX: rebuild woolPoints from real activity
+// ✅ KEEP THIS (but now clearly optional tool)
 app.post("/rebuild-points", async (req, res) => {
   try {
     const pool = await getPool();
