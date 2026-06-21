@@ -21,15 +21,19 @@ app.get("/", (req, res) => {
   res.send("API working ✅");
 });
 
+
 // Get leaderboard
 app.get("/profile", async (req, res) => {
   try {
+    console.log("GET /profile called from Render");
+
     await sql.connect(config);
 
     const result = await sql.query(`
       SELECT user_id, display_name, username, wool_points, tree_points
       FROM profiles
     `);
+
 
     res.json(result.recordset);
   } catch (err) {
