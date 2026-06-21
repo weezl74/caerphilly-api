@@ -13,7 +13,9 @@ app.use(cors({
 
 app.use(express.json());
 
-// SQL connection config
+// =======================
+// SQL CONFIG
+// =======================
 const config = {
   user: process.env.SQL_USER,
   password: process.env.SQL_PASSWORD,
@@ -24,58 +26,92 @@ const config = {
   }
 };
 
+// Create ONE global pool
+let pool;
+
+async function getPool() {
+  if (!pool) {
+    pool = await sql.connect(config);
+    console.log("✅ Connected to SQL");
+  }
+  return pool;
+}
+
+// =======================
+// ROUTES
+// =======================
+
 // Health check
 app.get("/", (req, res) => {
   res.send("API working ✅");
 });
 
-// Get leaderboard
+// ✅ FIXED LEADERBOARD
 app.get("/profile", async (req, res) => {
   try {
-    console.log("GET /profile called from Render");
+    console.log("📊 Fetching leaderboard");
 
-    await sql.connect(config);
+    const pool = await getPool();
 
-    const result = await sql.query(`
-      SELECT user_id, display_name, username, wool_points, tree_points
+    const result = await pool.request().query(`
+      SELECT 
+        user_id,
+        display_name,
+        username,
+        ISNULL(wool_points, 0) AS wool_points,
+        ISNULL(tree_points, 0) AS tree_points,
+        (ISNULL(wool_points,0) + ISNULL(tree_points,0)) AS total_points
       FROM profiles
+      ORDER BY total_points DESC
     `);
 
     res.json(result.recordset);
+
   } catch (err) {
+    console.error("❌ Leaderboard error:", err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// Save profile
+// ✅ SAVE PROFILE (fixed pool usage)
 app.post("/profile", async (req, res) => {
   try {
     const { user_id, display_name, username, account_type } = req.body;
 
-    await sql.connect(config);
+    const pool = await getPool();
 
-    await sql.query`
-      MERGE profiles AS target
-      USING (SELECT ${user_id} AS user_id) AS source
-      ON target.user_id = source.user_id
-      WHEN MATCHED THEN
-        UPDATE SET
-          display_name = ${display_name},
-          username = ${username},
-          account_type = ${account_type || "resident"}
-      WHEN NOT MATCHED THEN
-        INSERT (user_id, display_name, username, account_type)
-        VALUES (${user_id}, ${display_name}, ${username}, ${account_type || "resident"});
-    `;
+    await pool.request()
+      .input("user_id", sql.VarChar, user_id)
+      .input("display_name", sql.VarChar, display_name)
+      .input("username", sql.VarChar, username)
+      .input("account_type", sql.VarChar, account_type || "resident")
+      .query(`
+        MERGE profiles AS target
+        USING (SELECT @user_id AS user_id) AS source
+        ON target.user_id = source.user_id
+        WHEN MATCHED THEN
+          UPDATE SET
+            display_name = @display_name,
+            username = @username,
+            account_type = @account_type
+        WHEN NOT MATCHED THEN
+          INSERT (user_id, display_name, username, account_type, wool_points, tree_points)
+          VALUES (@user_id, @display_name, @username, @account_type, 0, 0);
+      `);
 
     res.json({ success: true });
+
   } catch (err) {
+    console.error("❌ Save error:", err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// Start server
+// =======================
+// START SERVER
+// =======================
 const PORT = process.env.PORT || 3000;
+
 app.listen(PORT, () => {
-  console.log(`API running on port ${PORT}`);
+  console.log(`🚀 API running on port ${PORT}`);
 });
