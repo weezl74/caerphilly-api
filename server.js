@@ -5,9 +5,10 @@ const sql = require("mssql");
 
 const app = express();
 
+// ✅ Allow POST + PATCH (fix earlier CORS issue)
 app.use(cors({
   origin: "*",
-  methods: ["GET", "POST"],
+  methods: ["GET", "POST", "PATCH"],
   allowedHeaders: ["Content-Type"]
 }));
 
@@ -26,7 +27,7 @@ const config = {
   }
 };
 
-// Create ONE global pool
+// ✅ SINGLE GLOBAL POOL
 let pool;
 
 async function getPool() {
@@ -41,12 +42,12 @@ async function getPool() {
 // ROUTES
 // =======================
 
-// Health check
+// ✅ Health check
 app.get("/", (req, res) => {
   res.send("API working ✅");
 });
 
-// ✅ FIXED LEADERBOARD
+// ✅ LEADERBOARD (now reads from user_state = your real system)
 app.get("/profile", async (req, res) => {
   try {
     console.log("📊 Fetching leaderboard");
@@ -55,13 +56,22 @@ app.get("/profile", async (req, res) => {
 
     const result = await pool.request().query(`
       SELECT 
-        user_id,
-        display_name,
-        username,
-        ISNULL(wool_points, 0) AS wool_points,
-        ISNULL(tree_points, 0) AS tree_points,
-        (ISNULL(wool_points,0) + ISNULL(tree_points,0)) AS total_points
-      FROM profiles
+        p.user_id,
+        p.display_name,
+        p.username,
+
+        -- ✅ USE REAL STORED VALUES (not broken profile table)
+        CAST(ISNULL(JSON_VALUE(us.data, '$.woolPoints'), 0) AS INT) AS wool_points,
+        CAST(ISNULL(JSON_VALUE(us.data, '$.treePoints'), 0) AS INT) AS tree_points,
+
+        -- ✅ TOTAL
+        CAST(ISNULL(JSON_VALUE(us.data, '$.woolPoints'), 0) AS INT)
+        + CAST(ISNULL(JSON_VALUE(us.data, '$.treePoints'), 0) AS INT)
+        AS total_points
+
+      FROM profiles p
+      LEFT JOIN user_state us ON p.user_id = us.user_id
+
       ORDER BY total_points DESC
     `);
 
@@ -73,7 +83,7 @@ app.get("/profile", async (req, res) => {
   }
 });
 
-// ✅ SAVE PROFILE (fixed pool usage)
+// ✅ SAVE PROFILE (unchanged)
 app.post("/profile", async (req, res) => {
   try {
     const { user_id, display_name, username, account_type } = req.body;
@@ -103,6 +113,39 @@ app.post("/profile", async (req, res) => {
 
   } catch (err) {
     console.error("❌ Save error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ✅ 🔥 ONE-TIME FIX: rebuild woolPoints from real activity
+app.post("/rebuild-points", async (req, res) => {
+  try {
+    const pool = await getPool();
+
+    console.log("🔧 Rebuilding woolPoints from stories + kudos...");
+
+    await pool.request().query(`
+      UPDATE us
+      SET data = JSON_MODIFY(us.data, '$.woolPoints', calc.wool)
+      FROM user_state us
+      JOIN (
+          SELECT 
+              p.user_id,
+              ISNULL(SUM(st.points_earned), 0)
+              + ISNULL(COUNT(sk.id) * 2, 0) AS wool
+          FROM profiles p
+          LEFT JOIN user_stories st ON p.user_id = st.user_id
+          LEFT JOIN story_kudos sk ON st.id = sk.story_id
+          GROUP BY p.user_id
+      ) calc ON us.user_id = calc.user_id;
+    `);
+
+    console.log("✅ Rebuild complete");
+
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error("❌ Rebuild error:", err);
     res.status(500).json({ error: err.message });
   }
 });
