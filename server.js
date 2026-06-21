@@ -1,5 +1,6 @@
-
+const cors = require("cors");
 const express = require("express");
+app.use(cors());
 const sql = require("mssql");
 
 const app = express();
