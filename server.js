@@ -48,7 +48,7 @@ app.get("/", (req, res) => {
   res.send("API working ✅");
 });
 
-// ✅ ✅ LEADERBOARD (wallet-based, matches real DB)
+// ✅ ✅ LEADERBOARD (reads from user_state JSON)
 app.get("/profile", async (req, res) => {
   try {
     console.log("📊 Fetching leaderboard");
@@ -61,15 +61,18 @@ app.get("/profile", async (req, res) => {
         p.display_name,
         p.username,
 
-        ISNULL(uw.wool_points, 0) AS wool_points,
-        ISNULL(uw.tree_points, 0) AS tree_points,
+        -- ✅ extract from JSON
+        ISNULL(JSON_VALUE(us.data, '$.woolPoints'), 0) AS wool_points,
+        ISNULL(JSON_VALUE(us.data, '$.treePoints'), 0) AS tree_points,
 
-        ISNULL(uw.wool_points, 0) + ISNULL(uw.tree_points, 0) AS total_points
+        -- ✅ total
+        ISNULL(JSON_VALUE(us.data, '$.woolPoints'), 0) +
+        ISNULL(JSON_VALUE(us.data, '$.treePoints'), 0) AS total_points
 
       FROM profiles p
 
-      LEFT JOIN user_wallet uw 
-        ON p.user_id = uw.user_id
+      LEFT JOIN user_state us 
+        ON p.user_id = us.user_id
 
       ORDER BY total_points DESC
     `);
@@ -112,39 +115,6 @@ app.post("/profile", async (req, res) => {
 
   } catch (err) {
     console.error("❌ Save error:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ✅ OPTIONAL: rebuild legacy wool points (safe to keep)
-app.post("/rebuild-points", async (req, res) => {
-  try {
-    const pool = await getPool();
-
-    console.log("🔧 Rebuilding woolPoints from stories + kudos...");
-
-    await pool.request().query(`
-      UPDATE us
-      SET data = JSON_MODIFY(us.data, '$.woolPoints', calc.wool)
-      FROM user_state us
-      JOIN (
-          SELECT 
-              p.user_id,
-              ISNULL(SUM(st.points_earned), 0)
-              + ISNULL(COUNT(sk.id) * 2, 0) AS wool
-          FROM profiles p
-          LEFT JOIN user_stories st ON p.user_id = st.user_id
-          LEFT JOIN story_kudos sk ON st.id = sk.story_id
-          GROUP BY p.user_id
-      ) calc ON us.user_id = calc.user_id;
-    `);
-
-    console.log("✅ Rebuild complete");
-
-    res.json({ success: true });
-
-  } catch (err) {
-    console.error("❌ Rebuild error:", err);
     res.status(500).json({ error: err.message });
   }
 });
