@@ -48,7 +48,7 @@ app.get("/", (req, res) => {
   res.send("API working ✅");
 });
 
-// ✅ ✅ LEADERBOARD (reads from user_state JSON)
+// ✅ ✅ LEADERBOARD (JSON-based, FIXED)
 app.get("/profile", async (req, res) => {
   try {
     console.log("📊 Fetching leaderboard");
@@ -61,18 +61,20 @@ app.get("/profile", async (req, res) => {
         p.display_name,
         p.username,
 
-        -- ✅ extract from JSON
-        ISNULL(JSON_VALUE(us.data, '$.woolPoints'), 0) AS wool_points,
-        ISNULL(JSON_VALUE(us.data, '$.treePoints'), 0) AS tree_points,
+        -- Extract wool points safely
+        COALESCE(TRY_CAST(JSON_VALUE(us.data, '$.woolPoints') AS INT), 0) AS wool_points,
 
-        -- ✅ total
-        ISNULL(JSON_VALUE(us.data, '$.woolPoints'), 0) +
-        ISNULL(JSON_VALUE(us.data, '$.treePoints'), 0) AS total_points
+        -- Extract tree points safely
+        COALESCE(TRY_CAST(JSON_VALUE(us.data, '$.treePoints') AS INT), 0) AS tree_points,
+
+        -- Calculate total
+        COALESCE(TRY_CAST(JSON_VALUE(us.data, '$.woolPoints') AS INT), 0) +
+        COALESCE(TRY_CAST(JSON_VALUE(us.data, '$.treePoints') AS INT), 0) AS total_points
 
       FROM profiles p
 
       LEFT JOIN user_state us 
-        ON p.user_id = us.user_id
+        ON TRY_CAST(p.user_id AS UNIQUEIDENTIFIER) = us.user_id
 
       ORDER BY total_points DESC
     `);
@@ -85,7 +87,7 @@ app.get("/profile", async (req, res) => {
   }
 });
 
-// ✅ SAVE PROFILE
+// ✅ SAVE PROFILE (unchanged)
 app.post("/profile", async (req, res) => {
   try {
     const { user_id, display_name, username, account_type } = req.body;
@@ -119,9 +121,7 @@ app.post("/profile", async (req, res) => {
   }
 });
 
-// =======================
-// START SERVER
-// =======================
+// ✅ START SERVER
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
