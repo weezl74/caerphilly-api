@@ -48,7 +48,7 @@ app.get("/", (req, res) => {
   res.send("API working ✅");
 });
 
-// ✅ ✅ FIXED LEADERBOARD (uses wallet - stable)
+// ✅ ✅ FINAL LEADERBOARD (correct + stable)
 app.get("/profile", async (req, res) => {
   try {
     console.log("📊 Fetching leaderboard");
@@ -57,22 +57,11 @@ app.get("/profile", async (req, res) => {
 
     const result = await pool.request().query(`
       SELECT 
-        p.user_id,
-        p.display_name,
-        p.username,
-
-        -- ✅ USE WALLET (real data source)
-        ISNULL(uw.wool_points, 0) AS wool_points,
-        ISNULL(uw.tree_points, 0) AS tree_points,
-
-        -- ✅ TOTAL
-        ISNULL(uw.wool_points, 0) + ISNULL(uw.tree_points, 0) AS total_points
-
-      FROM profiles p
-
-      LEFT JOIN user_wallet uw 
-        ON p.user_id = uw.user_id
-
+        user_id,
+        display_name,
+        username,
+        ISNULL(total_points, 0) AS total_points
+      FROM profiles
       ORDER BY total_points DESC
     `);
 
@@ -84,7 +73,7 @@ app.get("/profile", async (req, res) => {
   }
 });
 
-// ✅ SAVE PROFILE (safer version - removed broken columns)
+// ✅ SAVE PROFILE
 app.post("/profile", async (req, res) => {
   try {
     const { user_id, display_name, username, account_type } = req.body;
@@ -118,7 +107,7 @@ app.post("/profile", async (req, res) => {
   }
 });
 
-// ✅ KEEP THIS (but now clearly optional tool)
+// ✅ OPTIONAL: rebuild points (legacy support)
 app.post("/rebuild-points", async (req, res) => {
   try {
     const pool = await getPool();
