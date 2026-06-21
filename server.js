@@ -48,7 +48,8 @@ app.get("/", (req, res) => {
   res.send("API working ✅");
 });
 
-// ✅ ✅ LEADERBOARD (JSON-based, FIXED)
+
+// ✅ ✅ LEADERBOARD
 app.get("/profile", async (req, res) => {
   try {
     console.log("📊 Fetching leaderboard");
@@ -61,13 +62,9 @@ app.get("/profile", async (req, res) => {
         p.display_name,
         p.username,
 
-        -- Extract wool points safely
         COALESCE(TRY_CAST(JSON_VALUE(us.data, '$.woolPoints') AS INT), 0) AS wool_points,
-
-        -- Extract tree points safely
         COALESCE(TRY_CAST(JSON_VALUE(us.data, '$.treePoints') AS INT), 0) AS tree_points,
 
-        -- Calculate total
         COALESCE(TRY_CAST(JSON_VALUE(us.data, '$.woolPoints') AS INT), 0) +
         COALESCE(TRY_CAST(JSON_VALUE(us.data, '$.treePoints') AS INT), 0) AS total_points
 
@@ -86,6 +83,41 @@ app.get("/profile", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+
+// ✅ ✅ UPDATE POINTS (THIS IS THE FIX YOU NEEDED)
+app.post("/update-points", async (req, res) => {
+  try {
+    const { user_id, woolDelta, treeDelta } = req.body;
+
+    const pool = await getPool();
+
+    await pool.request()
+      .input("user_id", user_id)
+      .input("wool", woolDelta || 0)
+      .input("tree", treeDelta || 0)
+      .query(`
+        UPDATE user_state
+        SET data = JSON_MODIFY(
+          JSON_MODIFY(
+            ISNULL(data, '{}'),
+            '$.woolPoints',
+            COALESCE(TRY_CAST(JSON_VALUE(data, '$.woolPoints') AS INT), 0) + @wool
+          ),
+          '$.treePoints',
+          COALESCE(TRY_CAST(JSON_VALUE(data, '$.treePoints') AS INT), 0) + @tree
+        )
+        WHERE user_id = @user_id
+      `);
+
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error("❌ Update points error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 
 // ✅ SAVE PROFILE (unchanged)
 app.post("/profile", async (req, res) => {
@@ -121,7 +153,10 @@ app.post("/profile", async (req, res) => {
   }
 });
 
-// ✅ START SERVER
+
+// =======================
+// START SERVER
+// =======================
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
