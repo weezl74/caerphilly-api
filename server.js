@@ -1,9 +1,16 @@
-const cors = require("cors");
+
 const express = require("express");
-app.use(cors());
+const cors = require("cors");
 const sql = require("mssql");
 
 const app = express();
+
+app.use(cors({
+  origin: "*",
+  methods: ["GET", "POST"],
+  allowedHeaders: ["Content-Type"]
+}));
+
 app.use(express.json());
 
 // SQL connection config
@@ -22,7 +29,6 @@ app.get("/", (req, res) => {
   res.send("API working ✅");
 });
 
-
 // Get leaderboard
 app.get("/profile", async (req, res) => {
   try {
@@ -34,7 +40,6 @@ app.get("/profile", async (req, res) => {
       SELECT user_id, display_name, username, wool_points, tree_points
       FROM profiles
     `);
-
 
     res.json(result.recordset);
   } catch (err) {
