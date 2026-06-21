@@ -48,7 +48,7 @@ app.get("/", (req, res) => {
   res.send("API working ✅");
 });
 
-// ✅ ✅ FINAL LEADERBOARD (correct + stable)
+// ✅ ✅ LEADERBOARD (wallet-based, matches real DB)
 app.get("/profile", async (req, res) => {
   try {
     console.log("📊 Fetching leaderboard");
@@ -57,11 +57,20 @@ app.get("/profile", async (req, res) => {
 
     const result = await pool.request().query(`
       SELECT 
-        user_id,
-        display_name,
-        username,
-        ISNULL(total_points, 0) AS total_points
-      FROM profiles
+        p.user_id,
+        p.display_name,
+        p.username,
+
+        ISNULL(uw.wool_points, 0) AS wool_points,
+        ISNULL(uw.tree_points, 0) AS tree_points,
+
+        ISNULL(uw.wool_points, 0) + ISNULL(uw.tree_points, 0) AS total_points
+
+      FROM profiles p
+
+      LEFT JOIN user_wallet uw 
+        ON p.user_id = uw.user_id
+
       ORDER BY total_points DESC
     `);
 
@@ -107,7 +116,7 @@ app.post("/profile", async (req, res) => {
   }
 });
 
-// ✅ OPTIONAL: rebuild points (legacy support)
+// ✅ OPTIONAL: rebuild legacy wool points (safe to keep)
 app.post("/rebuild-points", async (req, res) => {
   try {
     const pool = await getPool();
