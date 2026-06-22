@@ -13,22 +13,14 @@ app.use(cors({
 
 app.use(express.json());
 
-// =======================
-// SQL CONFIG
-// =======================
 const config = {
   user: process.env.SQL_USER,
   password: process.env.SQL_PASSWORD,
   server: process.env.SQL_SERVER,
   database: process.env.SQL_DB,
-  options: {
-    encrypt: true
-  }
+  options: { encrypt: true }
 };
 
-// =======================
-// CONNECTION
-// =======================
 let pool;
 
 async function getPool() {
@@ -39,16 +31,12 @@ async function getPool() {
   return pool;
 }
 
-// =======================
-// ROUTES
-// =======================
-
-// ✅ Health check
+// ✅ HEALTH
 app.get("/", (req, res) => {
   res.send("API working ✅");
 });
 
-// ✅ Leaderboard
+// ✅ ✅ LEADERBOARD (lifetime only)
 app.get("/profile", async (req, res) => {
   try {
     const pool = await getPool();
@@ -60,27 +48,25 @@ app.get("/profile", async (req, res) => {
         p.username,
 
         COALESCE(TRY_CAST(JSON_VALUE(us.data, '$.woolPoints') AS INT), 0) AS wool_points,
-        COALESCE(TRY_CAST(JSON_VALUE(us.data, '$.treePoints') AS INT), 0) AS tree_points,
-
-        COALESCE(TRY_CAST(JSON_VALUE(us.data, '$.woolPoints') AS INT), 0) +
-        COALESCE(TRY_CAST(JSON_VALUE(us.data, '$.treePoints') AS INT), 0) AS total_points
+        COALESCE(TRY_CAST(JSON_VALUE(us.data, '$.treePoints') AS INT), 0) AS tree_points
 
       FROM profiles p
       LEFT JOIN user_state us 
         ON TRY_CAST(p.user_id AS UNIQUEIDENTIFIER) = us.user_id
 
-      ORDER BY total_points DESC
+      ORDER BY 
+        COALESCE(TRY_CAST(JSON_VALUE(us.data, '$.treePoints') AS INT), 0) DESC,
+        COALESCE(TRY_CAST(JSON_VALUE(us.data, '$.woolPoints') AS INT), 0) DESC
     `);
 
     res.json(result.recordset);
 
   } catch (err) {
-    console.error("❌ Leaderboard error:", err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// ✅ Single profile
+// ✅ SINGLE PROFILE
 app.get("/profile/:user_id", async (req, res) => {
   try {
     const { user_id } = req.params;
@@ -92,13 +78,10 @@ app.get("/profile/:user_id", async (req, res) => {
         SELECT TOP 1
           p.user_id,
           p.display_name,
-          p.username,
 
           COALESCE(TRY_CAST(JSON_VALUE(us.data, '$.woolPoints') AS INT), 0) AS wool_points,
           COALESCE(TRY_CAST(JSON_VALUE(us.data, '$.treePoints') AS INT), 0) AS tree_points,
-
-          COALESCE(TRY_CAST(JSON_VALUE(us.data, '$.woolPoints') AS INT), 0) +
-          COALESCE(TRY_CAST(JSON_VALUE(us.data, '$.treePoints') AS INT), 0) AS total_points
+          COALESCE(TRY_CAST(JSON_VALUE(us.data, '$.woolSpent') AS INT), 0) AS wool_spent
 
         FROM profiles p
         LEFT JOIN user_state us 
@@ -110,12 +93,11 @@ app.get("/profile/:user_id", async (req, res) => {
     res.json(result.recordset[0] || {});
 
   } catch (err) {
-    console.error("❌ Profile error:", err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// ✅ Update points
+// ✅ ✅ EARN POINTS (never subtract)
 app.post("/update-points", async (req, res) => {
   try {
     const { user_id, woolDelta, treeDelta } = req.body;
@@ -142,12 +124,37 @@ app.post("/update-points", async (req, res) => {
     res.json({ success: true });
 
   } catch (err) {
-    console.error("❌ Update error:", err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// ✅ Create user
+// ✅ ✅ SPEND POINTS (NEW)
+app.post("/spend-points", async (req, res) => {
+  try {
+    const { user_id, woolSpent } = req.body;
+    const pool = await getPool();
+
+    await pool.request()
+      .input("user_id", user_id)
+      .input("spent", woolSpent || 0)
+      .query(`
+        UPDATE user_state
+        SET data = JSON_MODIFY(
+          ISNULL(data, '{}'),
+          '$.woolSpent',
+          COALESCE(TRY_CAST(JSON_VALUE(data, '$.woolSpent') AS INT), 0) + @spent
+        )
+        WHERE user_id = TRY_CAST(@user_id AS UNIQUEIDENTIFIER)
+      `);
+
+    res.json({ success: true });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ✅ CREATE USER (fix Simon properly)
 app.post("/create-user", async (req, res) => {
   try {
     const { user_id, display_name } = req.body;
@@ -167,23 +174,19 @@ app.post("/create-user", async (req, res) => {
         INSERT INTO user_state (user_id, data)
         VALUES (
           TRY_CAST(@user_id AS UNIQUEIDENTIFIER),
-          '{"woolPoints":0,"treePoints":0}'
+          '{"woolPoints":0,"treePoints":0,"woolSpent":0}'
         )
       `);
 
     res.json({ success: true });
 
   } catch (err) {
-    console.error("❌ Create user error:", err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// =======================
-// START SERVER
-// =======================
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-  console.log("🚀 API running on port " + PORT);
+  console.log("🚀 API running");
 });
