@@ -5,17 +5,18 @@ const sql = require("mssql");
 
 const app = express();
 
-// ✅ ✅ FIXED CORS (this solves your error)
+// ✅ ✅ FULL CORS FIX (includes OPTIONS handling)
 app.use(cors({
   origin: true,
-  methods: ["GET", "POST", "PATCH"],
+  methods: ["GET", "POST", "PATCH", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"]
 }));
 
+// ✅ IMPORTANT: explicitly handle preflight
+app.options("*", cors());
+
 app.use(express.json());
 
-// =======================
-// SQL CONFIG
 // =======================
 const config = {
   user: process.env.SQL_USER,
@@ -44,7 +45,7 @@ app.get("/", (req, res) => {
   res.send("API working ✅");
 });
 
-// ✅ ✅ LEADERBOARD (lifetime only)
+// ✅ LEADERBOARD
 app.get("/profile", async (req, res) => {
   try {
     const pool = await getPool();
@@ -54,14 +55,11 @@ app.get("/profile", async (req, res) => {
         p.user_id,
         p.display_name,
         p.username,
-
         COALESCE(TRY_CAST(JSON_VALUE(us.data, '$.woolPoints') AS INT), 0) AS wool_points,
         COALESCE(TRY_CAST(JSON_VALUE(us.data, '$.treePoints') AS INT), 0) AS tree_points
-
       FROM profiles p
       LEFT JOIN user_state us 
         ON TRY_CAST(p.user_id AS UNIQUEIDENTIFIER) = us.user_id
-
       ORDER BY 
         COALESCE(TRY_CAST(JSON_VALUE(us.data, '$.treePoints') AS INT), 0) DESC,
         COALESCE(TRY_CAST(JSON_VALUE(us.data, '$.woolPoints') AS INT), 0) DESC
@@ -70,18 +68,65 @@ app.get("/profile", async (req, res) => {
     res.json(result.recordset);
 
   } catch (err) {
-    console.error("❌ Leaderboard error:", err);
+    console.error(err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// ✅ ✅ SINGLE PROFILE
-app.get("/profile/:user_id", async (req, res) => {
+// ✅ CREATE USER
+app.post("/create-user", async (req, res) => {
   try {
-    const { user_id } = req.params;
+    const { user_id, display_name } = req.body;
     const pool = await getPool();
 
-    const result = await pool.request()
+    await pool.request()
+      .input("user_id", user_id)
+      .input("display_name", display_name)
+      .query(`
+        MERGE profiles AS target
+        USING (SELECT @user_id AS user_id) AS source
+        ON target.user_id = source.user_id
+        WHEN NOT MATCHED THEN
+          INSERT (user_id, display_name)
+          VALUES (@user_id, @display_name);
+      `);
+
+    await pool.request()
       .input("user_id", user_id)
       .query(`
-        SELECT TOP 1
+        IF NOT EXISTS (
+          SELECT 1 FROM user_state 
+          WHERE user_id = TRY_CAST(@user_id AS UNIQUEIDENTIFIER)
+        )
+        INSERT INTO user_state (user_id, data)
+        VALUES (
+          TRY_CAST(@user_id AS UNIQUEIDENTIFIER),
+          '{"woolPoints":0,"treePoints":0,"woolSpent":0}'
+        );
+      `);
+
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ✅ UPDATE POINTS
+app.post("/update-points", async (req, res) => {
+  try {
+    const { user_id, woolDelta, treeDelta } = req.body;
+    const pool = await getPool();
+
+    await pool.request()
+      .input("user_id", user_id)
+      .input("wool", woolDelta || 0)
+      .input("tree", treeDelta || 0)
+      .query(`
+        UPDATE user_state
+        SET data = JSON_MODIFY(
+          JSON_MODIFY(
+            ISNULL(data, '{}'),
+            '$.woolPoints',
+            COALESCE(TRY_CAST(JSON_VALUE(data, '$.woolPoints') AS INT), 0) + @wool
