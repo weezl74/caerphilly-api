@@ -1,5 +1,6 @@
 
-const express = require("express");const express =const cors = require("cors");
+const express = require("express");
+const cors = require("cors");
 const sql = require("mssql");
 
 const app = express();
@@ -26,7 +27,7 @@ const config = {
 };
 
 // =======================
-// SINGLE GLOBAL POOL
+// CONNECTION
 // =======================
 let pool;
 
@@ -47,12 +48,9 @@ app.get("/", (req, res) => {
   res.send("API working ✅");
 });
 
-
-// ✅ ✅ LEADERBOARD (get_leaderboard equivalent)
+// ✅ Leaderboard
 app.get("/profile", async (req, res) => {
   try {
-    console.log("📊 Fetching leaderboard");
-
     const pool = await getPool();
 
     const result = await pool.request().query(`
@@ -82,8 +80,7 @@ app.get("/profile", async (req, res) => {
   }
 });
 
-
-// ✅ ✅ GET PUBLIC PROFILE (single user)
+// ✅ Single profile
 app.get("/profile/:user_id", async (req, res) => {
   try {
     const { user_id } = req.params;
@@ -92,7 +89,7 @@ app.get("/profile/:user_id", async (req, res) => {
     const result = await pool.request()
       .input("user_id", user_id)
       .query(`
-        SELECT 
+        SELECT TOP 1
           p.user_id,
           p.display_name,
           p.username,
@@ -104,27 +101,24 @@ app.get("/profile/:user_id", async (req, res) => {
           COALESCE(TRY_CAST(JSON_VALUE(us.data, '$.treePoints') AS INT), 0) AS total_points
 
         FROM profiles p
-
         LEFT JOIN user_state us 
           ON TRY_CAST(p.user_id AS UNIQUEIDENTIFIER) = us.user_id
 
         WHERE p.user_id = @user_id
       `);
 
-    res.json(result.recordset[0]);
+    res.json(result.recordset[0] || {});
 
   } catch (err) {
-    console.error("❌ Public profile error:", err);
+    console.error("❌ Profile error:", err);
     res.status(500).json({ error: err.message });
   }
 });
 
-
-// ✅ ✅ UPDATE POINTS (core game logic)
+// ✅ Update points
 app.post("/update-points", async (req, res) => {
   try {
     const { user_id, woolDelta, treeDelta } = req.body;
-
     const pool = await getPool();
 
     await pool.request()
@@ -148,19 +142,17 @@ app.post("/update-points", async (req, res) => {
     res.json({ success: true });
 
   } catch (err) {
-    console.error("❌ Update points error:", err);
+    console.error("❌ Update error:", err);
     res.status(500).json({ error: err.message });
   }
 });
 
-
-// ✅ ✅ CREATE USER (handle_new_user equivalent)
+// ✅ Create user
 app.post("/create-user", async (req, res) => {
   try {
     const { user_id, display_name } = req.body;
     const pool = await getPool();
 
-    // Insert into profiles
     await pool.request()
       .input("user_id", user_id)
       .input("display_name", display_name)
@@ -169,7 +161,6 @@ app.post("/create-user", async (req, res) => {
         VALUES (@user_id, @display_name)
       `);
 
-    // Insert into user_state
     await pool.request()
       .input("user_id", user_id)
       .query(`
@@ -188,47 +179,11 @@ app.post("/create-user", async (req, res) => {
   }
 });
 
-
-// ✅ SAVE PROFILE (existing)
-app.post("/profile", async (req, res) => {
-  try {
-    const { user_id, display_name, username, account_type } = req.body;
-
-    const pool = await getPool();
-
-    await pool.request()
-      .input("user_id", sql.VarChar, user_id)
-      .input("display_name", sql.VarChar, display_name)
-      .input("username", sql.VarChar, username)
-      .input("account_type", sql.VarChar, account_type || "resident")
-      .query(`
-        MERGE profiles AS target
-        USING (SELECT @user_id AS user_id) AS source
-        ON target.user_id = source.user_id
-        WHEN MATCHED THEN
-          UPDATE SET
-            display_name = @display_name,
-            username = @username,
-            account_type = @account_type
-        WHEN NOT MATCHED THEN
-          INSERT (user_id, display_name, username, account_type)
-          VALUES (@user_id, @display_name, @username, @account_type);
-      `);
-
-    res.json({ success: true });
-
-  } catch (err) {
-    console.error("❌ Save error:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-
 // =======================
 // START SERVER
 // =======================
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-  console.log(`🚀 API running on port ${PORT}`);
+  console.log("🚀 API running on port " + PORT);
 });
