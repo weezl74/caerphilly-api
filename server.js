@@ -5,19 +5,18 @@ const sql = require("mssql");
 
 const app = express();
 
-// ✅ ✅ FULL CORS FIX (includes OPTIONS handling)
+// ✅ CORS setup
 app.use(cors({
   origin: true,
   methods: ["GET", "POST", "PATCH", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"]
 }));
 
-// ✅ IMPORTANT: explicitly handle preflight
 app.options("*", cors());
 
 app.use(express.json());
 
-// =======================
+// ✅ SQL CONFIG
 const config = {
   user: process.env.SQL_USER,
   password: process.env.SQL_PASSWORD,
@@ -31,30 +30,24 @@ let pool;
 async function getPool() {
   if (!pool) {
     pool = await sql.connect(config);
-    console.log("✅ Connected to SQL");
+    console.log("Connected to SQL");
   }
   return pool;
 }
 
-// =======================
-// ROUTES
-// =======================
-
 // ✅ HEALTH
 app.get("/", (req, res) => {
-  res.send("API working ✅");
+  res.send("API working");
 });
 
 // ✅ LEADERBOARD
 app.get("/profile", async (req, res) => {
   try {
     const pool = await getPool();
-
     const result = await pool.request().query(`
       SELECT 
         p.user_id,
         p.display_name,
-        p.username,
         COALESCE(TRY_CAST(JSON_VALUE(us.data, '$.woolPoints') AS INT), 0) AS wool_points,
         COALESCE(TRY_CAST(JSON_VALUE(us.data, '$.treePoints') AS INT), 0) AS tree_points
       FROM profiles p
@@ -66,7 +59,6 @@ app.get("/profile", async (req, res) => {
     `);
 
     res.json(result.recordset);
-
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
@@ -106,7 +98,6 @@ app.post("/create-user", async (req, res) => {
       `);
 
     res.json({ success: true });
-
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
@@ -130,3 +121,24 @@ app.post("/update-points", async (req, res) => {
             ISNULL(data, '{}'),
             '$.woolPoints',
             COALESCE(TRY_CAST(JSON_VALUE(data, '$.woolPoints') AS INT), 0) + @wool
+          ),
+          '$.treePoints',
+          COALESCE(TRY_CAST(JSON_VALUE(data, '$.treePoints') AS INT), 0) + @tree
+        )
+        WHERE user_id = TRY_CAST(@user_id AS UNIQUEIDENTIFIER)
+      `);
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ✅ START SERVER
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+  console.log("API running on port " + PORT);
+});
+``
