@@ -40,7 +40,7 @@ app.get("/", (req, res) => {
   res.send("API working");
 });
 
-// ✅ LEADERBOARD
+// ✅ PROFILE (leaderboard-style)
 app.get("/profile", async (req, res) => {
   try {
     const pool = await getPool();
@@ -104,7 +104,7 @@ app.post("/create-user", async (req, res) => {
   }
 });
 
-// ✅ UPDATE POINTS
+// ✅ UPDATE POINTS (earn points)
 app.post("/update-points", async (req, res) => {
   try {
     const { user_id, woolDelta, treeDelta } = req.body;
@@ -130,7 +130,37 @@ app.post("/update-points", async (req, res) => {
 
     res.json({ success: true });
   } catch (err) {
-    console.error(err);
+    console.error("update-points error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ✅ SPEND / REFUND POINTS (THIS WAS MISSING)
+app.post("/spend-points", async (req, res) => {
+  try {
+    const { user_id, woolDelta } = req.body; // ✅ should be NEGATIVE for refunds
+    const pool = await getPool();
+
+    await pool.request()
+      .input("user_id", user_id)
+      .input("wool", woolDelta)
+      .query(`
+        UPDATE user_state
+        SET data = JSON_MODIFY(
+          ISNULL(data, '{}'),
+          '$.woolPoints',
+          CASE 
+            WHEN COALESCE(TRY_CAST(JSON_VALUE(data, '$.woolPoints') AS INT), 0) + @wool < 0
+            THEN 0
+            ELSE COALESCE(TRY_CAST(JSON_VALUE(data, '$.woolPoints') AS INT), 0) + @wool
+          END
+        )
+        WHERE user_id = TRY_CAST(@user_id AS UNIQUEIDENTIFIER)
+      `);
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("spend-points error:", err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -141,4 +171,3 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log("API running on port " + PORT);
 });
-``
