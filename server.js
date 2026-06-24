@@ -60,7 +60,7 @@ app.get("/profile", async (req, res) => {
 
     res.json(result.recordset);
   } catch (err) {
-    console.error(err);
+    console.error("profile error:", err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -99,7 +99,7 @@ app.post("/create-user", async (req, res) => {
 
     res.json({ success: true });
   } catch (err) {
-    console.error(err);
+    console.error("create-user error:", err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -107,18 +107,18 @@ app.post("/create-user", async (req, res) => {
 // ✅ UPDATE POINTS (earn points)
 app.post("/update-points", async (req, res) => {
   try {
-    const { user_id, woolDelta, treeDelta } = req.body;
+    const { user_id, woolDelta = 0, treeDelta = 0 } = req.body;
     const pool = await getPool();
 
     await pool.request()
       .input("user_id", user_id)
-      .input("wool", woolDelta || 0)
-      .input("tree", treeDelta || 0)
+      .input("wool", woolDelta)
+      .input("tree", treeDelta)
       .query(`
         UPDATE user_state
         SET data = JSON_MODIFY(
           JSON_MODIFY(
-            ISNULL(data, '{}'),
+            ISNULL(data, '{"woolPoints":0,"treePoints":0}'),
             '$.woolPoints',
             COALESCE(TRY_CAST(JSON_VALUE(data, '$.woolPoints') AS INT), 0) + @wool
           ),
@@ -135,10 +135,10 @@ app.post("/update-points", async (req, res) => {
   }
 });
 
-// ✅ SPEND / REFUND POINTS (THIS WAS MISSING)
+// ✅ SPEND / REFUND POINTS
 app.post("/spend-points", async (req, res) => {
   try {
-    const { user_id, woolDelta } = req.body; // ✅ should be NEGATIVE for refunds
+    const { user_id, woolDelta } = req.body;
     const pool = await getPool();
 
     await pool.request()
@@ -147,7 +147,7 @@ app.post("/spend-points", async (req, res) => {
       .query(`
         UPDATE user_state
         SET data = JSON_MODIFY(
-          ISNULL(data, '{}'),
+          ISNULL(data, '{"woolPoints":0,"treePoints":0}'),
           '$.woolPoints',
           CASE 
             WHEN COALESCE(TRY_CAST(JSON_VALUE(data, '$.woolPoints') AS INT), 0) + @wool < 0
