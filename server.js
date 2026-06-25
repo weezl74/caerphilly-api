@@ -13,6 +13,7 @@ app.use(cors({
 
 app.use(express.json());
 
+// ✅ SQL CONFIG
 const config = {
   user: process.env.SQL_USER,
   password: process.env.SQL_PASSWORD,
@@ -31,10 +32,12 @@ async function getPool() {
   return pool;
 }
 
+// ✅ HEALTH
 app.get("/", (req, res) => {
   res.send("API working");
 });
 
+// ✅ GET ALL USERS (leaderboard)
 app.get("/profile", async (req, res) => {
   try {
     const pool = await getPool();
@@ -58,35 +61,51 @@ app.get("/profile", async (req, res) => {
   }
 });
 
+// ✅ ✅ GET SINGLE USER (THIS FIXES YOUR 605 ISSUE)
+app.get("/profile/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const pool = await getPool();
+
+    const result = await pool.request()
+      .input("user_id", id)
+      .query(`
+        SELECT 
+          COALESCE(TRY_CAST(JSON_VALUE(us.data, '$.woolPoints') AS INT), 0) AS wool_points,
+          COALESCE(TRY_CAST(JSON_VALUE(us.data, '$.treePoints') AS INT), 0) AS tree_points
+        FROM user_state us
+        WHERE us.user_id = TRY_CAST(@user_id AS UNIQUEIDENTIFIER)
+      `);
+
+    res.json(result.recordset[0] || {
+      wool_points: 0,
+      tree_points: 0
+    });
+
+  } catch (err) {
+    console.error("profile/:id error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ✅ UPDATE POINTS (SAFE LOGIC)
 app.post("/update-points", async (req, res) => {
   try {
-    const {
-      user_id,
-      woolDelta = 0,
-      treeDelta = 0,
-      source
-    } = req.body;
+    const { user_id, woolDelta = 0, treeDelta = 0, source } = req.body;
 
     const pool = await getPool();
 
     let finalWool = woolDelta;
     let finalTree = treeDelta;
 
-    // ✅ HARD RULES
-
-    if (source === "accessory_purchase") {
+    // ✅ FORCE SPEND (accessory + renewable)
+    if (source?.includes("purchase")) {
       finalWool = -Math.abs(woolDelta);
     }
 
-    else if (source === "accessory_refund") {
+    // ✅ FORCE REFUND
+    if (source?.includes("refund")) {
       finalWool = Math.abs(woolDelta);
-    }
-
-    else {
-      // ✅ fallback protection (THIS is key)
-      if (woolDelta > 0) {
-        finalWool = -Math.abs(woolDelta); // assume spend
-      }
     }
 
     await pool.request()
@@ -107,17 +126,20 @@ app.post("/update-points", async (req, res) => {
         WHERE user_id = TRY_CAST(@user_id AS UNIQUEIDENTIFIER)
       `);
 
-    res.json({
-      success: true,
-      applied: { wool: finalWool }
+    console.log("✅ Applied:", {
+      source,
+      wool: finalWool
     });
 
+    res.json({ success: true });
+
   } catch (err) {
-    console.error("error:", err);
+    console.error("update-points error:", err);
     res.status(500).json({ error: err.message });
   }
 });
 
+// ✅ START
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
