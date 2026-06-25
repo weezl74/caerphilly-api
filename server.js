@@ -9,6 +9,221 @@ const app = express();
 app.use(cors({
   origin: true,
   methods: ["GET", "POST", "PATCH", "OPTIONS"],
+const express = require("express");
+const cors = require("cors");
+const sql = require("mssql");
+
+const app = express();
+
+// ✅ CORS
+app.use(cors({
+  origin: true,
+  methods: ["GET", "POST", "PATCH", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"]
+}));
+
+app.use(express.json());
+
+// ✅ SQL CONFIG
+const config = {
+  user: process.env.SQL_USER,
+  password: process.env.SQL_PASSWORD,
+  server: process.env.SQL_SERVER,
+  database: process.env.SQL_DB,
+  options: { encrypt: true }
+};
+
+let pool;
+
+async function getPool() {
+  if (!pool) {
+    pool = await sql.connect(config);
+    console.log("✅ Connected to SQL");
+  }
+  return pool;
+}
+
+// ✅ HEALTH
+app.get("/", (req, res) => {
+  res.send("API working");
+});
+
+// ✅ PROFILE
+app.get("/profile", async (req, res) => {
+  try {
+    const pool = await getPool();
+
+    const result = await pool.request().query(`
+      SELECT 
+        p.user_id,
+        p.display_name,
+        COALESCE(TRY_CAST(JSON_VALUE(us.data, '$.woolPoints') AS INT), 0) AS wool_points,
+        COALESCE(TRY_CAST(JSON_VALUE(us.data, '$.treePoints') AS INT), 0) AS tree_points
+      FROM profiles p
+      LEFT JOIN user_state us 
+        ON TRY_CAST(p.user_id AS UNIQUEIDENTIFIER) = us.user_id
+    `);
+
+    res.json(result.recordset);
+
+  } catch (err) {
+    console.error("profile error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ✅ CREATE USER
+app.post("/create-user", async (req, res) => {
+  try {
+    const { user_id, display_name } = req.body;
+    const pool = await getPool();
+
+    await pool.request()
+      .input("user_id", user_id)
+      .input("display_name", display_name)
+      .query(`
+        MERGE profiles AS target
+        USING (SELECT @user_id AS user_id) AS source
+        ON target.user_id = source.user_id
+        WHEN NOT MATCHED THEN
+          INSERT (user_id, display_name)
+          VALUES (@user_id, @display_name);
+      `);
+
+    await pool.request()
+      .input("user_id", user_id)
+      .query(`
+        IF NOT EXISTS (
+          SELECT 1 FROM user_state 
+          WHERE user_id = TRY_CAST(@user_id AS UNIQUEIDENTIFIER)
+        )
+        INSERT INTO user_state (user_id, data)
+        VALUES (
+          TRY_CAST(@user_id AS UNIQUEIDENTIFIER),
+          '{"woolPoints":0,"treePoints":0}'
+        );
+      `);
+
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error("create-user error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ✅ ✅ SINGLE SOURCE OF TRUTH FOR ALL POINTS LOGIC
+app.post("/update-points", async (req, res) => {
+  try {
+    const {
+      user_id,
+      woolDelta = 0,
+      treeDelta = 0,
+      source = "unknown",
+      reference_id
+    } = req.body;
+
+    const pool = await getPool();
+
+    let finalWool = woolDelta;
+    let finalTree = treeDelta;
+
+    // ✅ CORE LOGIC — FIX EVERYTHING HERE
+
+    // 🎯 PURCHASE → ALWAYS SUBTRACT
+    if (source === "accessory_purchase") {
+      finalWool = -Math.abs(woolDelta);
+      finalTree = -Math.abs(treeDelta);
+    }
+
+    // 🎯 REFUND → ALWAYS ADD
+    else if (source === "accessory_refund") {
+      finalWool = Math.abs(woolDelta);
+      finalTree = Math.abs(treeDelta);
+    }
+
+    // 🎯 AWARD → ALWAYS ADD
+    else if (source === "award") {
+      finalWool = Math.abs(woolDelta);
+      finalTree = Math.abs(treeDelta);
+    }
+
+    // ✅ DEFAULT SAFETY
+    else {
+      finalWool = woolDelta;
+      finalTree = treeDelta;
+    }
+
+    // ✅ APPLY UPDATE TO JSON
+    await pool.request()
+      .input("user_id", user_id)
+      .input("wool", finalWool)
+      .input("tree", finalTree)
+      .query(`
+        UPDATE user_state
+        SET data = JSON_MODIFY(
+          JSON_MODIFY(
+            ISNULL(data, '{"woolPoints":0,"treePoints":0}'),
+            '$.woolPoints',
+            COALESCE(TRY_CAST(JSON_VALUE(data, '$.woolPoints') AS INT), 0) + @wool
+          ),
+          '$.treePoints',
+          COALESCE(TRY_CAST(JSON_VALUE(data, '$.treePoints') AS INT), 0) + @tree
+        )
+        WHERE user_id = TRY_CAST(@user_id AS UNIQUEIDENTIFIER)
+      `);
+
+    console.log("✅ Points updated:", {
+      user_id,
+      source,
+      applied: { wool: finalWool, tree: finalTree }
+    });
+
+    res.json({
+      success: true,
+      applied: {
+        wool: finalWool,
+        tree: finalTree
+      }
+    });
+
+  } catch (err) {
+    console.error("update-points error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ✅ LEGACY ENDPOINT (KEEP BUT SAFE)
+app.post("/spend-points", async (req, res) => {
+  try {
+    const { user_id, woolDelta } = req.body;
+
+    // ✅ Convert into proper update-points call
+    const fakeReq = {
+      body: {
+        user_id,
+        woolDelta,
+        treeDelta: 0,
+        source: woolDelta >= 0 ? "accessory_refund" : "accessory_purchase"
+      }
+    };
+
+    return app._router.handle(fakeReq, res, () => {}, "/update-points", "post");
+
+  } catch (err) {
+    console.error("spend-points error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ✅ START
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+  console.log("🚀 API running on port " + PORT);
+});
+``
+
   allowedHeaders: ["Content-Type", "Authorization"]
 }));
 
