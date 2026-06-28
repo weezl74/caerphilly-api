@@ -319,7 +319,61 @@ app.post("/responses/save", async (req, res) => {
           @points_earned
         )
       `);
+app.get("/renewables", async (req, res) => {
+  try {
+    const { user_id } = req.query;
+    const pool = await getPool();
 
+    const result = await pool.request()
+      .input("user_id", user_id)
+      .query(`
+        SELECT id, technology_type, points_cost, position_x, position_y
+        FROM user_renewables
+        WHERE user_id = TRY_CAST(@user_id AS UNIQUEIDENTIFIER)
+        ORDER BY id DESC
+      `);
+
+    res.json(result.recordset);
+
+  } catch (err) {
+    console.error("❌ GET /renewables error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+app.post("/renewables", async (req, res) => {
+  try {
+    const { user_id, technology_type, points_cost } = req.body;
+    const pool = await getPool();
+
+    const id = uuidv4();
+
+    await pool.request()
+      .input("id", id)
+      .input("user_id", user_id)
+      .input("technology_type", technology_type)
+      .input("points_cost", points_cost)
+      .query(`
+        INSERT INTO user_renewables (
+          id,
+          user_id,
+          technology_type,
+          points_cost
+        )
+        VALUES (
+          @id,
+          TRY_CAST(@user_id AS UNIQUEIDENTIFIER),
+          @technology_type,
+          @points_cost
+        )
+      `);
+
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error("❌ POST /renewables error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
     res.json({ success: true });
 
   } catch (err) {
