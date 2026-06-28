@@ -38,7 +38,10 @@ app.get("/", (req, res) => {
 });
 
 
-// ✅ ✅ LEADERBOARD (FIXED EARLIER)
+// =====================================================
+// ✅ USERS + LEADERBOARD
+// =====================================================
+
 app.get("/profile", async (req, res) => {
   try {
     const pool = await getPool();
@@ -55,7 +58,6 @@ app.get("/profile", async (req, res) => {
     `);
 
     res.json(result.recordset);
-
   } catch (err) {
     console.error("❌ /profile error:", err);
     res.status(500).json({ error: err.message });
@@ -63,7 +65,6 @@ app.get("/profile", async (req, res) => {
 });
 
 
-// ✅ SINGLE USER PROFILE
 app.get("/profile/:id", async (req, res) => {
   try {
     const pool = await getPool();
@@ -84,20 +85,16 @@ app.get("/profile/:id", async (req, res) => {
     });
 
   } catch (err) {
-    console.error(err);
     res.status(500).json({ error: err.message });
   }
 });
 
 
-// ✅ ✅ CREATE USER (THIS FIXES YOUR 404)
 app.post("/create-user", async (req, res) => {
   try {
     const { user_id, display_name = "User" } = req.body;
-
     const pool = await getPool();
 
-    // ✅ create profile if missing
     await pool.request()
       .input("user_id", user_id)
       .input("display_name", display_name)
@@ -109,7 +106,6 @@ app.post("/create-user", async (req, res) => {
         END
       `);
 
-    // ✅ create user_state if missing
     await pool.request()
       .input("user_id", user_id)
       .query(`
@@ -121,7 +117,6 @@ app.post("/create-user", async (req, res) => {
       `);
 
     res.json({ success: true });
-
   } catch (err) {
     console.error("❌ create-user error:", err);
     res.status(500).json({ error: err.message });
@@ -129,22 +124,19 @@ app.post("/create-user", async (req, res) => {
 });
 
 
-// ✅ UPDATE POINTS
+// =====================================================
+// ✅ POINTS
+// =====================================================
+
 app.post("/update-points", async (req, res) => {
   try {
     const { user_id, woolDelta = 0, source = "" } = req.body;
-
     const pool = await getPool();
 
     let finalWool = woolDelta;
 
-    if (source.includes("purchase")) {
-      finalWool = -Math.abs(woolDelta);
-    }
-
-    if (source.includes("refund")) {
-      finalWool = Math.abs(woolDelta);
-    }
+    if (source.includes("purchase")) finalWool = -Math.abs(woolDelta);
+    if (source.includes("refund")) finalWool = Math.abs(woolDelta);
 
     await pool.request()
       .input("user_id", user_id)
@@ -162,42 +154,146 @@ app.post("/update-points", async (req, res) => {
     res.json({ success: true });
 
   } catch (err) {
-    console.error(err);
     res.status(500).json({ error: err.message });
   }
 });
 
 
-// ✅ COMPATIBILITY: spend points
 app.post("/spend-points", async (req, res) => {
   try {
     const { user_id, woolDelta = 0, reason = "" } = req.body;
 
-    let source = "accessory_purchase";
-
-    if (reason.includes("refund")) {
-      source = "accessory_refund";
-    }
+    let source = reason.includes("refund")
+      ? "accessory_refund"
+      : "accessory_purchase";
 
     const fakeReq = {
-      body: {
-        user_id,
-        woolDelta,
-        source
-      }
+      body: { user_id, woolDelta, source }
     };
 
     return app._router.handle(fakeReq, res, () => {}, "/update-points", "post");
 
   } catch (err) {
-    console.error(err);
     res.status(500).json({ error: err.message });
   }
 });
 
+
+// =====================================================
+// ✅ STORIES (FULL MIGRATION)
+// =====================================================
+
+// ✅ GET stories
+app.get("/stories", async (req, res) => {
+  try {
+    const pool = await getPool();
+
+    const result = await pool.request().query(`
+      SELECT 
+        s.id,
+        s.title,
+        s.content,
+        s.run_type,
+        s.points_earned,
+        s.image_url,
+        s.created_at,
+        s.user_id,
+        p.display_name,
+        COUNT(k.user_id) AS kudos_count
+      FROM stories s
+      LEFT JOIN profiles p ON p.user_id = s.user_id
+      LEFT JOIN story_kudos k ON k.story_id = s.id
+      GROUP BY s.id, s.title, s.content, s.run_type, s.points_earned, s.image_url, s.created_at, s.user_id, p.display_name
+      ORDER BY s.created_at DESC
+    `);
+
+    res.json(result.recordset);
+
+  } catch (err) {
+    console.error("❌ /stories error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+// ✅ POST story
+app.post("/stories", async (req, res) => {
+  try {
+    const {
+      user_id,
+      title,
+      content,
+      run_type,
+      points_earned,
+      image_url
+    } = req.body;
+
+    const pool = await getPool();
+
+    await pool.request()
+      .input("user_id", user_id)
+      .input("title", title)
+      .input("content", content)
+      .input("run_type", run_type)
+      .input("points", points_earned)
+      .input("image_url", image_url)
+      .query(`
+        INSERT INTO stories (user_id, title, content, run_type, points_earned, image_url, created_at)
+        VALUES (@user_id, @title, @content, @run_type, @points, @image_url, GETDATE())
+      `);
+
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error("❌ create story error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+// ✅ TOGGLE KUDOS
+app.post("/stories/:id/kudos", async (req, res) => {
+  try {
+    const storyId = req.params.id;
+    const { user_id, remove } = req.body;
+
+    const pool = await getPool();
+
+    if (remove) {
+      await pool.request()
+        .input("story_id", storyId)
+        .input("user_id", user_id)
+        .query(`
+          DELETE FROM story_kudos
+          WHERE story_id = @story_id AND user_id = @user_id
+        `);
+    } else {
+      await pool.request()
+        .input("story_id", storyId)
+        .input("user_id", user_id)
+        .query(`
+          INSERT INTO story_kudos (story_id, user_id)
+          SELECT @story_id, @user_id
+          WHERE NOT EXISTS (
+            SELECT 1 FROM story_kudos WHERE story_id = @story_id AND user_id = @user_id
+          )
+        `);
+    }
+
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error("❌ kudos error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+// =====================================================
 
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
   console.log("🚀 API running on port", PORT);
 });
+``
