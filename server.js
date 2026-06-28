@@ -14,6 +14,9 @@ app.use(cors({
 
 app.use(express.json());
 
+// =====================================================
+// ✅ SQL CONFIG
+// =====================================================
 const config = {
   user: process.env.SQL_USER,
   password: process.env.SQL_PASSWORD,
@@ -33,14 +36,14 @@ async function getPool() {
 }
 
 // =====================================================
-// ROOT
+// ✅ ROOT
 // =====================================================
 app.get("/", (req, res) => {
   res.send("API working");
 });
 
 // =====================================================
-// PROFILE
+// ✅ PROFILE
 // =====================================================
 app.get("/profile", async (req, res) => {
   try {
@@ -66,7 +69,7 @@ app.get("/profile", async (req, res) => {
 });
 
 // =====================================================
-// STORIES
+// ✅ STORIES
 // =====================================================
 
 // ✅ GET STORIES
@@ -137,7 +140,7 @@ app.post("/stories", async (req, res) => {
         )
         VALUES (
           @id,
-          @user_id,
+          TRY_CAST(@user_id AS UNIQUEIDENTIFIER),
           @title,
           @content,
           @run_type,
@@ -157,7 +160,7 @@ app.post("/stories", async (req, res) => {
 });
 
 // =====================================================
-// RESPONSES (NEW — THIS IS YOUR FIX)
+// ✅ RESPONSES (FULLY FIXED)
 // =====================================================
 
 // ✅ GET RESPONSES
@@ -172,7 +175,8 @@ app.get("/responses", async (req, res) => {
       .query(`
         SELECT question_id, answer_value, impact_value
         FROM user_responses
-        WHERE user_id = @user_id AND category = @category
+        WHERE user_id = TRY_CAST(@user_id AS UNIQUEIDENTIFIER)
+        AND category = @category
       `);
 
     res.json(result.recordset);
@@ -183,22 +187,23 @@ app.get("/responses", async (req, res) => {
   }
 });
 
-// ✅ SAVE RESPONSES
+// ✅ SAVE RESPONSES (FIXED VERSION)
 app.post("/responses/save", async (req, res) => {
   try {
     const { user_id, category, responses } = req.body;
     const pool = await getPool();
 
-    // delete existing
+    // ✅ DELETE existing
     await pool.request()
       .input("user_id", user_id)
       .input("category", category)
       .query(`
         DELETE FROM user_responses
-        WHERE user_id = @user_id AND category = @category
+        WHERE user_id = TRY_CAST(@user_id AS UNIQUEIDENTIFIER)
+        AND category = @category
       `);
 
-    // insert new
+    // ✅ INSERT new
     for (const r of responses) {
       await pool.request()
         .input("user_id", r.user_id)
@@ -215,7 +220,7 @@ app.post("/responses/save", async (req, res) => {
             impact_value
           )
           VALUES (
-            @user_id,
+            TRY_CAST(@user_id AS UNIQUEIDENTIFIER),
             @category,
             @question_id,
             @answer_value,
