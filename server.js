@@ -13,6 +13,7 @@ app.use(cors({
 
 app.use(express.json());
 
+// ✅ SQL CONFIG
 const config = {
   user: process.env.SQL_USER,
   password: process.env.SQL_PASSWORD,
@@ -31,9 +32,36 @@ async function getPool() {
   return pool;
 }
 
+// ✅ ROOT
 app.get("/", (req, res) => {
   res.send("API working");
 });
+
+
+// ✅ ✅ NEW: LEADERBOARD ENDPOINT (THIS FIXES YOUR ISSUE)
+app.get("/profile", async (req, res) => {
+  try {
+    const pool = await getPool();
+
+    const result = await pool.request().query(`
+      SELECT 
+        p.user_id,
+        p.display_name,
+        COALESCE(TRY_CAST(JSON_VALUE(us.data, '$.woolPoints') AS INT), 0) AS wool_points,
+        COALESCE(TRY_CAST(JSON_VALUE(us.data, '$.treePoints') AS INT), 0) AS tree_points
+      FROM profiles p
+      LEFT JOIN user_state us 
+        ON TRY_CAST(p.user_id AS UNIQUEIDENTIFIER) = us.user_id
+    `);
+
+    res.json(result.recordset);
+
+  } catch (err) {
+    console.error("❌ /profile error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 
 // ✅ SINGLE USER PROFILE
 app.get("/profile/:id", async (req, res) => {
@@ -61,7 +89,8 @@ app.get("/profile/:id", async (req, res) => {
   }
 });
 
-// ✅ MAIN UPDATE ENDPOINT
+
+// ✅ UPDATE POINTS
 app.post("/update-points", async (req, res) => {
   try {
     const { user_id, woolDelta = 0, source = "" } = req.body;
@@ -70,7 +99,6 @@ app.post("/update-points", async (req, res) => {
 
     let finalWool = woolDelta;
 
-    // ✅ FORCE CORRECT BEHAVIOUR
     if (source.includes("purchase")) {
       finalWool = -Math.abs(woolDelta);
     }
@@ -102,19 +130,18 @@ app.post("/update-points", async (req, res) => {
   }
 });
 
-// ✅ ✅ CRITICAL FIX — SUPPORT OLD FRONTEND
+
+// ✅ SPEND POINTS (compatibility layer)
 app.post("/spend-points", async (req, res) => {
   try {
     const { user_id, woolDelta = 0, reason = "" } = req.body;
 
-    // ✅ Convert old calls into new logic
     let source = "accessory_purchase";
 
     if (reason.includes("refund")) {
       source = "accessory_refund";
     }
 
-    // reuse update endpoint logic
     const fakeReq = {
       body: {
         user_id,
@@ -130,6 +157,7 @@ app.post("/spend-points", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 
 const PORT = process.env.PORT || 3000;
 
