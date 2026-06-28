@@ -14,9 +14,6 @@ app.use(cors({
 
 app.use(express.json());
 
-// =====================================================
-// ✅ SQL CONFIG
-// =====================================================
 const config = {
   user: process.env.SQL_USER,
   password: process.env.SQL_PASSWORD,
@@ -36,14 +33,14 @@ async function getPool() {
 }
 
 // =====================================================
-// ✅ ROOT
+// ROOT
 // =====================================================
 app.get("/", (req, res) => {
   res.send("API working");
 });
 
 // =====================================================
-// ✅ PROFILE
+// PROFILE
 // =====================================================
 app.get("/profile", async (req, res) => {
   try {
@@ -69,10 +66,8 @@ app.get("/profile", async (req, res) => {
 });
 
 // =====================================================
-// ✅ STORIES
+// STORIES
 // =====================================================
-
-// ✅ GET STORIES
 app.get("/stories", async (req, res) => {
   try {
     const pool = await getPool();
@@ -103,9 +98,11 @@ app.get("/stories", async (req, res) => {
   }
 });
 
-// ✅ CREATE STORY
 app.post("/stories", async (req, res) => {
   try {
+    const pool = await getPool();
+    const id = uuidv4();
+
     const {
       user_id,
       title,
@@ -114,9 +111,6 @@ app.post("/stories", async (req, res) => {
       points_earned,
       image_url = null
     } = req.body;
-
-    const pool = await getPool();
-    const id = uuidv4();
 
     await pool.request()
       .input("id", id)
@@ -160,10 +154,8 @@ app.post("/stories", async (req, res) => {
 });
 
 // =====================================================
-// ✅ RESPONSES (FINAL, STABLE)
+// RESPONSES
 // =====================================================
-
-// ✅ GET RESPONSES
 app.get("/responses", async (req, res) => {
   try {
     const { user_id, category } = req.query;
@@ -187,13 +179,12 @@ app.get("/responses", async (req, res) => {
   }
 });
 
-// ✅ SAVE RESPONSES (FINAL FIX – BULLETPROOF)
+// ✅ FINAL FIX WITH ID
 app.post("/responses/save", async (req, res) => {
   try {
     const { user_id, category, responses } = req.body;
     const pool = await getPool();
 
-    // ✅ DELETE existing first
     await pool.request()
       .input("user_id", user_id)
       .input("category", category)
@@ -203,10 +194,10 @@ app.post("/responses/save", async (req, res) => {
         AND category = @category
       `);
 
-    // ✅ INSERT each response safely
     for (const r of responses) {
       const request = pool.request();
 
+      request.input("id", uuidv4()); // ✅ FIX
       request.input("user_id", r.user_id);
       request.input("category", r.category);
       request.input("question_id", r.question_id);
@@ -215,6 +206,7 @@ app.post("/responses/save", async (req, res) => {
 
       await request.query(`
         INSERT INTO user_responses (
+          id,
           user_id,
           category,
           question_id,
@@ -222,6 +214,7 @@ app.post("/responses/save", async (req, res) => {
           impact_value
         )
         VALUES (
+          @id,
           TRY_CAST(@user_id AS UNIQUEIDENTIFIER),
           @category,
           @question_id,
@@ -235,9 +228,7 @@ app.post("/responses/save", async (req, res) => {
 
   } catch (err) {
     console.error("❌ POST /responses/save error:", err);
-    res.status(500).json({
-      error: err.message
-    });
+    res.status(500).json({ error: err.message });
   }
 });
 
