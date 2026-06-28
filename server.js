@@ -290,13 +290,14 @@ app.post("/responses/save", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-    app.post("/pledges", async (req, res) => {
+  app.post("/pledges", async (req, res) => {
   try {
     const { user_id, category, action, points_earned } = req.body;
     const pool = await getPool();
 
     const id = uuidv4();
 
+    // ✅ Insert pledge
     await pool.request()
       .input("id", id)
       .input("user_id", user_id)
@@ -319,6 +320,25 @@ app.post("/responses/save", async (req, res) => {
           @points_earned
         )
       `);
+
+    // ✅ ADD: update user points
+    await pool.request()
+      .input("user_id", user_id)
+      .input("points", points_earned)
+      .query(`
+        UPDATE profiles
+        SET total_points = ISNULL(total_points, 0) + @points
+        WHERE user_id = TRY_CAST(@user_id AS UNIQUEIDENTIFIER)
+      `);
+
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error("❌ POST /pledges error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get("/renewables", async (req, res) => {
   try {
     const { user_id } = req.query;
