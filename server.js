@@ -32,7 +32,9 @@ async function getPool() {
   return pool;
 }
 
+// =====================================================
 // ✅ ROOT
+// =====================================================
 app.get("/", (req, res) => {
   res.send("API working");
 });
@@ -41,7 +43,6 @@ app.get("/", (req, res) => {
 // =====================================================
 // ✅ USERS + LEADERBOARD
 // =====================================================
-
 app.get("/profile", async (req, res) => {
   try {
     const pool = await getPool();
@@ -118,7 +119,6 @@ app.post("/create-user", async (req, res) => {
 
     res.json({ success: true });
   } catch (err) {
-    console.error("❌ create-user error:", err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -127,7 +127,6 @@ app.post("/create-user", async (req, res) => {
 // =====================================================
 // ✅ POINTS
 // =====================================================
-
 app.post("/update-points", async (req, res) => {
   try {
     const { user_id, woolDelta = 0, source = "" } = req.body;
@@ -180,7 +179,7 @@ app.post("/spend-points", async (req, res) => {
 
 
 // =====================================================
-// ✅ STORIES (FULL MIGRATION)
+// ✅ STORIES (CORRECT TABLE ✅)
 // =====================================================
 
 // ✅ GET stories
@@ -200,7 +199,7 @@ app.get("/stories", async (req, res) => {
         s.user_id,
         p.display_name,
         COUNT(k.user_id) AS kudos_count
-      FROM stories s
+      FROM user_stories s
       LEFT JOIN profiles p ON p.user_id = s.user_id
       LEFT JOIN story_kudos k ON k.story_id = s.id
       GROUP BY s.id, s.title, s.content, s.run_type, s.points_earned, s.image_url, s.created_at, s.user_id, p.display_name
@@ -216,7 +215,7 @@ app.get("/stories", async (req, res) => {
 });
 
 
-// ✅ POST story
+// ✅ CREATE story
 app.post("/stories", async (req, res) => {
   try {
     const {
@@ -238,14 +237,13 @@ app.post("/stories", async (req, res) => {
       .input("points", points_earned)
       .input("image_url", image_url)
       .query(`
-        INSERT INTO stories (user_id, title, content, run_type, points_earned, image_url, created_at)
+        INSERT INTO user_stories (user_id, title, content, run_type, points_earned, image_url, created_at)
         VALUES (@user_id, @title, @content, @run_type, @points, @image_url, GETDATE())
       `);
 
     res.json({ success: true });
 
   } catch (err) {
-    console.error("❌ create story error:", err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -256,7 +254,6 @@ app.post("/stories/:id/kudos", async (req, res) => {
   try {
     const storyId = req.params.id;
     const { user_id, remove } = req.body;
-
     const pool = await getPool();
 
     if (remove) {
@@ -290,10 +287,8 @@ app.post("/stories/:id/kudos", async (req, res) => {
 
 
 // =====================================================
-
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
   console.log("🚀 API running on port", PORT);
 });
-``
