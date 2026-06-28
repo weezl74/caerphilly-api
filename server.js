@@ -59,6 +59,7 @@ app.get("/profile", async (req, res) => {
     `);
 
     res.json(result.recordset);
+
   } catch (err) {
     console.error("❌ /profile error:", err);
     res.status(500).json({ error: err.message });
@@ -118,7 +119,9 @@ app.post("/create-user", async (req, res) => {
       `);
 
     res.json({ success: true });
+
   } catch (err) {
+    console.error("❌ create-user error:", err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -179,10 +182,10 @@ app.post("/spend-points", async (req, res) => {
 
 
 // =====================================================
-// ✅ STORIES (CORRECT TABLE ✅)
+// ✅ STORIES (FULLY ALIGNED TO YOUR DB)
 // =====================================================
 
-// ✅ GET stories
+// ✅ GET STORIES
 app.get("/stories", async (req, res) => {
   try {
     const pool = await getPool();
@@ -194,7 +197,6 @@ app.get("/stories", async (req, res) => {
         s.content,
         s.run_type,
         s.points_earned,
-        s.image_url,
         s.created_at,
         s.user_id,
         p.display_name,
@@ -202,7 +204,7 @@ app.get("/stories", async (req, res) => {
       FROM user_stories s
       LEFT JOIN profiles p ON p.user_id = s.user_id
       LEFT JOIN story_kudos k ON k.story_id = s.id
-      GROUP BY s.id, s.title, s.content, s.run_type, s.points_earned, s.image_url, s.created_at, s.user_id, p.display_name
+      GROUP BY s.id, s.title, s.content, s.run_type, s.points_earned, s.created_at, s.user_id, p.display_name
       ORDER BY s.created_at DESC
     `);
 
@@ -215,7 +217,7 @@ app.get("/stories", async (req, res) => {
 });
 
 
-// ✅ CREATE story
+// ✅ CREATE STORY (FIXED + SAFE)
 app.post("/stories", async (req, res) => {
   try {
     const {
@@ -223,8 +225,7 @@ app.post("/stories", async (req, res) => {
       title,
       content,
       run_type,
-      points_earned,
-      image_url
+      points_earned
     } = req.body;
 
     const pool = await getPool();
@@ -235,25 +236,26 @@ app.post("/stories", async (req, res) => {
       .input("content", content)
       .input("run_type", run_type)
       .input("points", points_earned)
-      .input("image_url", image_url)
       .query(`
-        INSERT INTO user_stories (user_id, title, content, run_type, points_earned, image_url, created_at)
-        VALUES (@user_id, @title, @content, @run_type, @points, @image_url, GETDATE())
+        INSERT INTO user_stories (user_id, title, content, run_type, points_earned, created_at)
+        VALUES (@user_id, @title, @content, @run_type, @points, GETDATE())
       `);
 
     res.json({ success: true });
 
   } catch (err) {
+    console.error("❌ POST /stories error:", err);
     res.status(500).json({ error: err.message });
   }
 });
 
 
-// ✅ TOGGLE KUDOS
+// ✅ KUDOS
 app.post("/stories/:id/kudos", async (req, res) => {
   try {
     const storyId = req.params.id;
     const { user_id, remove } = req.body;
+
     const pool = await getPool();
 
     if (remove) {
@@ -272,7 +274,8 @@ app.post("/stories/:id/kudos", async (req, res) => {
           INSERT INTO story_kudos (story_id, user_id)
           SELECT @story_id, @user_id
           WHERE NOT EXISTS (
-            SELECT 1 FROM story_kudos WHERE story_id = @story_id AND user_id = @user_id
+            SELECT 1 FROM story_kudos 
+            WHERE story_id = @story_id AND user_id = @user_id
           )
         `);
     }
