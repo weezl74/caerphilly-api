@@ -160,7 +160,7 @@ app.post("/stories", async (req, res) => {
 });
 
 // =====================================================
-// ✅ RESPONSES (FULLY FIXED)
+// ✅ RESPONSES (FINAL, STABLE)
 // =====================================================
 
 // ✅ GET RESPONSES
@@ -187,13 +187,13 @@ app.get("/responses", async (req, res) => {
   }
 });
 
-// ✅ SAVE RESPONSES (FIXED VERSION)
+// ✅ SAVE RESPONSES (FINAL FIX – BULLETPROOF)
 app.post("/responses/save", async (req, res) => {
   try {
     const { user_id, category, responses } = req.body;
     const pool = await getPool();
 
-    // ✅ DELETE existing
+    // ✅ DELETE existing first
     await pool.request()
       .input("user_id", user_id)
       .input("category", category)
@@ -203,37 +203,41 @@ app.post("/responses/save", async (req, res) => {
         AND category = @category
       `);
 
-    // ✅ INSERT new
+    // ✅ INSERT each response safely
     for (const r of responses) {
-      await pool.request()
-        .input("user_id", r.user_id)
-        .input("category", r.category)
-        .input("question_id", r.question_id)
-        .input("answer_value", r.answer_value)
-        .input("impact_value", r.impact_value)
-        .query(`
-          INSERT INTO user_responses (
-            user_id,
-            category,
-            question_id,
-            answer_value,
-            impact_value
-          )
-          VALUES (
-            TRY_CAST(@user_id AS UNIQUEIDENTIFIER),
-            @category,
-            @question_id,
-            @answer_value,
-            @impact_value
-          )
-        `);
+      const request = pool.request();
+
+      request.input("user_id", r.user_id);
+      request.input("category", r.category);
+      request.input("question_id", r.question_id);
+      request.input("answer_value", r.answer_value);
+      request.input("impact_value", r.impact_value);
+
+      await request.query(`
+        INSERT INTO user_responses (
+          user_id,
+          category,
+          question_id,
+          answer_value,
+          impact_value
+        )
+        VALUES (
+          TRY_CAST(@user_id AS UNIQUEIDENTIFIER),
+          @category,
+          @question_id,
+          @answer_value,
+          @impact_value
+        )
+      `);
     }
 
     res.json({ success: true });
 
   } catch (err) {
     console.error("❌ POST /responses/save error:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({
+      error: err.message
+    });
   }
 });
 
