@@ -60,6 +60,7 @@ app.get("/profile", async (req, res) => {
     res.json(result.recordset);
 
   } catch (err) {
+    console.error("❌ /profile error:", err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -68,7 +69,7 @@ app.get("/profile", async (req, res) => {
 // STORIES
 // =====================================================
 
-// ✅ GET STORIES (THIS WAS MISSING)
+// ✅ GET STORIES
 app.get("/stories", async (req, res) => {
   try {
     const pool = await getPool();
@@ -155,32 +156,70 @@ app.post("/stories", async (req, res) => {
   }
 });
 
-// ✅ KUDOS
-app.post("/stories/:id/kudos", async (req, res) => {
-  try {
-    const storyId = req.params.id;
-    const { user_id, remove } = req.body;
+// =====================================================
+// RESPONSES (NEW — THIS IS YOUR FIX)
+// =====================================================
 
+// ✅ GET RESPONSES
+app.get("/responses", async (req, res) => {
+  try {
+    const { user_id, category } = req.query;
     const pool = await getPool();
 
-    if (remove) {
+    const result = await pool.request()
+      .input("user_id", user_id)
+      .input("category", category)
+      .query(`
+        SELECT question_id, answer_value, impact_value
+        FROM user_responses
+        WHERE user_id = @user_id AND category = @category
+      `);
+
+    res.json(result.recordset);
+
+  } catch (err) {
+    console.error("❌ GET /responses error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ✅ SAVE RESPONSES
+app.post("/responses/save", async (req, res) => {
+  try {
+    const { user_id, category, responses } = req.body;
+    const pool = await getPool();
+
+    // delete existing
+    await pool.request()
+      .input("user_id", user_id)
+      .input("category", category)
+      .query(`
+        DELETE FROM user_responses
+        WHERE user_id = @user_id AND category = @category
+      `);
+
+    // insert new
+    for (const r of responses) {
       await pool.request()
-        .input("story_id", storyId)
-        .input("user_id", user_id)
+        .input("user_id", r.user_id)
+        .input("category", r.category)
+        .input("question_id", r.question_id)
+        .input("answer_value", r.answer_value)
+        .input("impact_value", r.impact_value)
         .query(`
-          DELETE FROM story_kudos
-          WHERE story_id = @story_id AND user_id = @user_id
-        `);
-    } else {
-      await pool.request()
-        .input("story_id", storyId)
-        .input("user_id", user_id)
-        .query(`
-          INSERT INTO story_kudos (story_id, user_id)
-          SELECT @story_id, @user_id
-          WHERE NOT EXISTS (
-            SELECT 1 FROM story_kudos 
-            WHERE story_id = @story_id AND user_id = @user_id
+          INSERT INTO user_responses (
+            user_id,
+            category,
+            question_id,
+            answer_value,
+            impact_value
+          )
+          VALUES (
+            @user_id,
+            @category,
+            @question_id,
+            @answer_value,
+            @impact_value
           )
         `);
     }
@@ -188,7 +227,7 @@ app.post("/stories/:id/kudos", async (req, res) => {
     res.json({ success: true });
 
   } catch (err) {
-    console.error("❌ kudos error:", err);
+    console.error("❌ POST /responses/save error:", err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -199,4 +238,4 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log("🚀 API running on port", PORT);
 });
-
+``
