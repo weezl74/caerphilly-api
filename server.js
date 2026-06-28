@@ -389,7 +389,31 @@ app.post("/renewables", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+app.patch("/renewables", async (req, res) => {
+  try {
+    const { id, user_id, position_x, position_y } = req.body;
+    const pool = await getPool();
 
+    await pool.request()
+      .input("id", id)
+      .input("user_id", user_id)
+      .input("position_x", position_x)
+      .input("position_y", position_y)
+      .query(`
+        UPDATE user_renewables
+        SET position_x = @position_x,
+            position_y = @position_y
+        WHERE id = @id
+        AND user_id = TRY_CAST(@user_id AS UNIQUEIDENTIFIER)
+      `);
+
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error("❌ PATCH /renewables error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
 // =====================================================
 const PORT = process.env.PORT || 3000;
 
