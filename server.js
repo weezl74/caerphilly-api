@@ -1,7 +1,8 @@
+
 const express = require("express");
 const cors = require("cors");
 const sql = require("mssql");
-const { v4: uuidv4 } = require("uuid"); // ✅ required
+const { v4: uuidv4 } = require("uuid");
 
 const app = express();
 
@@ -31,10 +32,16 @@ async function getPool() {
   return pool;
 }
 
+// =====================================================
+// ROOT
+// =====================================================
 app.get("/", (req, res) => {
   res.send("API working");
 });
 
+// =====================================================
+// PROFILE
+// =====================================================
 app.get("/profile", async (req, res) => {
   try {
     const pool = await getPool();
@@ -57,6 +64,42 @@ app.get("/profile", async (req, res) => {
   }
 });
 
+// =====================================================
+// STORIES
+// =====================================================
+
+// ✅ GET STORIES (THIS WAS MISSING)
+app.get("/stories", async (req, res) => {
+  try {
+    const pool = await getPool();
+
+    const result = await pool.request().query(`
+      SELECT 
+        s.id,
+        s.title,
+        s.content,
+        s.run_type,
+        s.points_earned,
+        s.created_at,
+        s.user_id,
+        p.display_name,
+        COUNT(k.user_id) AS kudos_count
+      FROM user_stories s
+      LEFT JOIN profiles p ON p.user_id = s.user_id
+      LEFT JOIN story_kudos k ON k.story_id = s.id
+      GROUP BY s.id, s.title, s.content, s.run_type, s.points_earned, s.created_at, s.user_id, p.display_name
+      ORDER BY s.created_at DESC
+    `);
+
+    res.json(result.recordset);
+
+  } catch (err) {
+    console.error("❌ /stories error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ✅ CREATE STORY
 app.post("/stories", async (req, res) => {
   try {
     const {
@@ -69,8 +112,7 @@ app.post("/stories", async (req, res) => {
     } = req.body;
 
     const pool = await getPool();
-
-    const id = uuidv4(); // ✅ THIS FIXES YOUR ERROR
+    const id = uuidv4();
 
     await pool.request()
       .input("id", id)
@@ -113,9 +155,48 @@ app.post("/stories", async (req, res) => {
   }
 });
 
+// ✅ KUDOS
+app.post("/stories/:id/kudos", async (req, res) => {
+  try {
+    const storyId = req.params.id;
+    const { user_id, remove } = req.body;
+
+    const pool = await getPool();
+
+    if (remove) {
+      await pool.request()
+        .input("story_id", storyId)
+        .input("user_id", user_id)
+        .query(`
+          DELETE FROM story_kudos
+          WHERE story_id = @story_id AND user_id = @user_id
+        `);
+    } else {
+      await pool.request()
+        .input("story_id", storyId)
+        .input("user_id", user_id)
+        .query(`
+          INSERT INTO story_kudos (story_id, user_id)
+          SELECT @story_id, @user_id
+          WHERE NOT EXISTS (
+            SELECT 1 FROM story_kudos 
+            WHERE story_id = @story_id AND user_id = @user_id
+          )
+        `);
+    }
+
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error("❌ kudos error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// =====================================================
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
   console.log("🚀 API running on port", PORT);
 });
-``
+
