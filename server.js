@@ -43,6 +43,39 @@ app.get("/", (req, res) => {
 });
 
 // =====================================================
+// CREATE USER ✅ FIXED
+// =====================================================
+app.post("/create-user", async (req, res) => {
+  try {
+    const { user_id } = req.body;
+    const pool = await getPool();
+
+    await pool.request()
+      .input("user_id", user_id)
+      .query(`
+        IF NOT EXISTS (
+          SELECT 1 FROM profiles
+          WHERE user_id = TRY_CAST(@user_id AS UNIQUEIDENTIFIER)
+        )
+        BEGIN
+          INSERT INTO profiles (user_id, wool_points, tree_points)
+          VALUES (
+            TRY_CAST(@user_id AS UNIQUEIDENTIFIER),
+            0,
+            0
+          )
+        END
+      `);
+
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error("❌ POST /create-user error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// =====================================================
 // PROFILE
 // =====================================================
 app.get("/profile", async (req, res) => {
@@ -91,39 +124,7 @@ app.post("/profile/update", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-// =====================================================
-// CREATE USER (CRITICAL FIX)
-// =====================================================
-app.post("/create-user", async (req, res) => {
-  try {
-    const { user_id, email } = req.body;
-    const pool = await getPool();
 
-    await pool.request()
-      .input("user_id", user_id)
-      .input("email", email)
-      .query(`
-        IF NOT EXISTS (
-          SELECT 1 FROM profiles
-          WHERE user_id = TRY_CAST(@user_id AS UNIQUEIDENTIFIER)
-        )
-        BEGIN
-          INSERT INTO profiles (user_id, email, total_points)
-          VALUES (
-            TRY_CAST(@user_id AS UNIQUEIDENTIFIER),
-            @email,
-            0
-          )
-        END
-      `);
-
-    res.json({ success: true });
-
-  } catch (err) {
-    console.error("❌ POST /create-user error:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
 // =====================================================
 // RESPONSES
 // =====================================================
@@ -199,7 +200,7 @@ app.post("/responses/save", async (req, res) => {
 });
 
 // =====================================================
-// PLEDGES
+// PLEDGES ✅ FIXED POINTS
 // =====================================================
 app.get("/pledges", async (req, res) => {
   try {
@@ -252,12 +253,13 @@ app.post("/pledges", async (req, res) => {
         )
       `);
 
+    // ✅ FIXED: use wool_points
     await pool.request()
       .input("user_id", user_id)
       .input("points", points_earned)
       .query(`
         UPDATE profiles
-        SET total_points = ISNULL(total_points, 0) + @points
+        SET wool_points = ISNULL(wool_points, 0) + @points
         WHERE user_id = TRY_CAST(@user_id AS UNIQUEIDENTIFIER)
       `);
 
@@ -359,4 +361,3 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log("🚀 API running on port", PORT);
 });
-``
