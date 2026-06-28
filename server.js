@@ -14,6 +14,9 @@ app.use(cors({
 
 app.use(express.json());
 
+// =====================================================
+// ✅ SQL CONFIG
+// =====================================================
 const config = {
   user: process.env.SQL_USER,
   password: process.env.SQL_PASSWORD,
@@ -33,41 +36,72 @@ async function getPool() {
 }
 
 // =====================================================
-// ROOT
+// ✅ ROOT
 // =====================================================
 app.get("/", (req, res) => {
   res.send("API working");
 });
 
 // =====================================================
-// PROFILE
+// ✅ PROFILE
 // =====================================================
+
+// ✅ GET PROFILE
 app.get("/profile", async (req, res) => {
   try {
+    const { user_id } = req.query;
     const pool = await getPool();
 
-    const result = await pool.request().query(`
-      SELECT 
-        p.user_id,
-        p.display_name,
-        COALESCE(TRY_CAST(JSON_VALUE(us.data, '$.woolPoints') AS INT), 0) AS wool_points,
-        COALESCE(TRY_CAST(JSON_VALUE(us.data, '$.treePoints') AS INT), 0) AS tree_points
-      FROM profiles p
-      LEFT JOIN user_state us 
-        ON TRY_CAST(p.user_id AS UNIQUEIDENTIFIER) = us.user_id
-    `);
+    const result = await pool.request()
+      .input("user_id", user_id)
+      .query(`
+        SELECT *
+        FROM profiles
+        WHERE user_id = TRY_CAST(@user_id AS UNIQUEIDENTIFIER)
+      `);
 
-    res.json(result.recordset);
+    res.json(result.recordset[0] || null);
 
   } catch (err) {
-    console.error("❌ /profile error:", err);
+    console.error("❌ GET /profile error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ✅ UPDATE PROFILE
+app.post("/profile/update", async (req, res) => {
+  try {
+    const { user_id, updates } = req.body;
+    const pool = await getPool();
+
+    const fields = Object.keys(updates);
+    const setClause = fields.map(f => `${f} = @${f}`).join(", ");
+
+    const request = pool.request().input("user_id", user_id);
+
+    fields.forEach(field => {
+      request.input(field, updates[field]);
+    });
+
+    await request.query(`
+      UPDATE profiles
+      SET ${setClause}
+      WHERE user_id = TRY_CAST(@user_id AS UNIQUEIDENTIFIER)
+    `);
+
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error("❌ POST /profile/update error:", err);
     res.status(500).json({ error: err.message });
   }
 });
 
 // =====================================================
-// STORIES
+// ✅ STORIES
 // =====================================================
+
+// ✅ GET STORIES
 app.get("/stories", async (req, res) => {
   try {
     const pool = await getPool();
@@ -98,11 +132,9 @@ app.get("/stories", async (req, res) => {
   }
 });
 
+// ✅ CREATE STORY
 app.post("/stories", async (req, res) => {
   try {
-    const pool = await getPool();
-    const id = uuidv4();
-
     const {
       user_id,
       title,
@@ -111,6 +143,9 @@ app.post("/stories", async (req, res) => {
       points_earned,
       image_url = null
     } = req.body;
+
+    const pool = await getPool();
+    const id = uuidv4();
 
     await pool.request()
       .input("id", id)
@@ -154,22 +189,30 @@ app.post("/stories", async (req, res) => {
 });
 
 // =====================================================
-// RESPONSES
+// ✅ RESPONSES
 // =====================================================
+
+// ✅ GET RESPONSES
 app.get("/responses", async (req, res) => {
   try {
     const { user_id, category } = req.query;
     const pool = await getPool();
 
-    const result = await pool.request()
-      .input("user_id", user_id)
-      .input("category", category)
-      .query(`
-        SELECT question_id, answer_value, impact_value
-        FROM user_responses
-        WHERE user_id = TRY_CAST(@user_id AS UNIQUEIDENTIFIER)
-        AND category = @category
-      `);
+    const request = pool.request()
+      .input("user_id", user_id);
+
+    let query = `
+      SELECT question_id, answer_value, impact_value, category
+      FROM user_responses
+      WHERE user_id = TRY_CAST(@user_id AS UNIQUEIDENTIFIER)
+    `;
+
+    if (category) {
+      request.input("category", category);
+      query += " AND category = @category";
+    }
+
+    const result = await request.query(query);
 
     res.json(result.recordset);
 
@@ -179,12 +222,13 @@ app.get("/responses", async (req, res) => {
   }
 });
 
-// ✅ FINAL FIX WITH ID
+// ✅ SAVE RESPONSES
 app.post("/responses/save", async (req, res) => {
   try {
     const { user_id, category, responses } = req.body;
     const pool = await getPool();
 
+    // DELETE first
     await pool.request()
       .input("user_id", user_id)
       .input("category", category)
@@ -194,10 +238,11 @@ app.post("/responses/save", async (req, res) => {
         AND category = @category
       `);
 
+    // INSERT new
     for (const r of responses) {
       const request = pool.request();
 
-      request.input("id", uuidv4()); // ✅ FIX
+      request.input("id", uuidv4());
       request.input("user_id", r.user_id);
       request.input("category", r.category);
       request.input("question_id", r.question_id);
@@ -238,4 +283,3 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log("🚀 API running on port", PORT);
 });
-``
