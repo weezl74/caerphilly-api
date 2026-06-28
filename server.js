@@ -269,6 +269,65 @@ app.post("/responses/save", async (req, res) => {
       `);
     }
 
+    app.get("/pledges", async (req, res) => {
+  try {
+    const { user_id } = req.query;
+    const pool = await getPool();
+
+    const result = await pool.request()
+      .input("user_id", user_id)
+      .query(`
+        SELECT id, category, action, points_earned
+        FROM user_pledges
+        WHERE user_id = TRY_CAST(@user_id AS UNIQUEIDENTIFIER)
+        ORDER BY id DESC
+      `);
+
+    res.json(result.recordset);
+
+  } catch (err) {
+    console.error("❌ GET /pledges error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+    app.post("/pledges", async (req, res) => {
+  try {
+    const { user_id, category, action, points_earned } = req.body;
+    const pool = await getPool();
+
+    const id = uuidv4();
+
+    await pool.request()
+      .input("id", id)
+      .input("user_id", user_id)
+      .input("category", category)
+      .input("action", action)
+      .input("points_earned", points_earned)
+      .query(`
+        INSERT INTO user_pledges (
+          id,
+          user_id,
+          category,
+          action,
+          points_earned
+        )
+        VALUES (
+          @id,
+          TRY_CAST(@user_id AS UNIQUEIDENTIFIER),
+          @category,
+          @action,
+          @points_earned
+        )
+      `);
+
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error("❌ POST /pledges error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
     res.json({ success: true });
 
   } catch (err) {
