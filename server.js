@@ -15,7 +15,7 @@ app.use(cors({
 app.use(express.json());
 
 // =====================================================
-// ✅ SQL CONFIG
+// SQL CONFIG
 // =====================================================
 const config = {
   user: process.env.SQL_USER,
@@ -36,17 +36,15 @@ async function getPool() {
 }
 
 // =====================================================
-// ✅ ROOT
+// ROOT
 // =====================================================
 app.get("/", (req, res) => {
   res.send("API working");
 });
 
 // =====================================================
-// ✅ PROFILE
+// PROFILE
 // =====================================================
-
-// ✅ GET PROFILE
 app.get("/profile", async (req, res) => {
   try {
     const { user_id } = req.query;
@@ -68,7 +66,6 @@ app.get("/profile", async (req, res) => {
   }
 });
 
-// ✅ UPDATE PROFILE
 app.post("/profile/update", async (req, res) => {
   try {
     const { user_id, updates } = req.body;
@@ -79,9 +76,7 @@ app.post("/profile/update", async (req, res) => {
 
     const request = pool.request().input("user_id", user_id);
 
-    fields.forEach(field => {
-      request.input(field, updates[field]);
-    });
+    fields.forEach(f => request.input(f, updates[f]));
 
     await request.query(`
       UPDATE profiles
@@ -98,121 +93,20 @@ app.post("/profile/update", async (req, res) => {
 });
 
 // =====================================================
-// ✅ STORIES
+// RESPONSES
 // =====================================================
-
-// ✅ GET STORIES
-app.get("/stories", async (req, res) => {
-  try {
-    const pool = await getPool();
-
-    const result = await pool.request().query(`
-      SELECT 
-        s.id,
-        s.title,
-        s.content,
-        s.run_type,
-        s.points_earned,
-        s.created_at,
-        s.user_id,
-        p.display_name,
-        COUNT(k.user_id) AS kudos_count
-      FROM user_stories s
-      LEFT JOIN profiles p ON p.user_id = s.user_id
-      LEFT JOIN story_kudos k ON k.story_id = s.id
-      GROUP BY s.id, s.title, s.content, s.run_type, s.points_earned, s.created_at, s.user_id, p.display_name
-      ORDER BY s.created_at DESC
-    `);
-
-    res.json(result.recordset);
-
-  } catch (err) {
-    console.error("❌ /stories error:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ✅ CREATE STORY
-app.post("/stories", async (req, res) => {
-  try {
-    const {
-      user_id,
-      title,
-      content,
-      run_type,
-      points_earned,
-      image_url = null
-    } = req.body;
-
-    const pool = await getPool();
-    const id = uuidv4();
-
-    await pool.request()
-      .input("id", id)
-      .input("user_id", user_id)
-      .input("title", title)
-      .input("content", content)
-      .input("run_type", run_type)
-      .input("points", points_earned)
-      .input("image_url", image_url)
-      .query(`
-        INSERT INTO user_stories (
-          id,
-          user_id,
-          title,
-          content,
-          run_type,
-          points_earned,
-          image_url,
-          created_at,
-          updated_at
-        )
-        VALUES (
-          @id,
-          TRY_CAST(@user_id AS UNIQUEIDENTIFIER),
-          @title,
-          @content,
-          @run_type,
-          @points,
-          @image_url,
-          GETDATE(),
-          GETDATE()
-        )
-      `);
-
-    res.json({ success: true });
-
-  } catch (err) {
-    console.error("❌ POST /stories error:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// =====================================================
-// ✅ RESPONSES
-// =====================================================
-
-// ✅ GET RESPONSES
 app.get("/responses", async (req, res) => {
   try {
-    const { user_id, category } = req.query;
+    const { user_id } = req.query;
     const pool = await getPool();
 
-    const request = pool.request()
-      .input("user_id", user_id);
-
-    let query = `
-      SELECT question_id, answer_value, impact_value, category
-      FROM user_responses
-      WHERE user_id = TRY_CAST(@user_id AS UNIQUEIDENTIFIER)
-    `;
-
-    if (category) {
-      request.input("category", category);
-      query += " AND category = @category";
-    }
-
-    const result = await request.query(query);
+    const result = await pool.request()
+      .input("user_id", user_id)
+      .query(`
+        SELECT question_id, answer_value, impact_value, category
+        FROM user_responses
+        WHERE user_id = TRY_CAST(@user_id AS UNIQUEIDENTIFIER)
+      `);
 
     res.json(result.recordset);
 
@@ -222,13 +116,11 @@ app.get("/responses", async (req, res) => {
   }
 });
 
-// ✅ SAVE RESPONSES
 app.post("/responses/save", async (req, res) => {
   try {
     const { user_id, category, responses } = req.body;
     const pool = await getPool();
 
-    // DELETE first
     await pool.request()
       .input("user_id", user_id)
       .input("category", category)
@@ -238,38 +130,46 @@ app.post("/responses/save", async (req, res) => {
         AND category = @category
       `);
 
-    // INSERT new
     for (const r of responses) {
-      const request = pool.request();
-
-      request.input("id", uuidv4());
-      request.input("user_id", r.user_id);
-      request.input("category", r.category);
-      request.input("question_id", r.question_id);
-      request.input("answer_value", r.answer_value);
-      request.input("impact_value", r.impact_value);
-
-      await request.query(`
-        INSERT INTO user_responses (
-          id,
-          user_id,
-          category,
-          question_id,
-          answer_value,
-          impact_value
-        )
-        VALUES (
-          @id,
-          TRY_CAST(@user_id AS UNIQUEIDENTIFIER),
-          @category,
-          @question_id,
-          @answer_value,
-          @impact_value
-        )
-      `);
+      await pool.request()
+        .input("id", uuidv4())
+        .input("user_id", r.user_id)
+        .input("category", r.category)
+        .input("question_id", r.question_id)
+        .input("answer_value", r.answer_value)
+        .input("impact_value", r.impact_value)
+        .query(`
+          INSERT INTO user_responses (
+            id,
+            user_id,
+            category,
+            question_id,
+            answer_value,
+            impact_value
+          )
+          VALUES (
+            @id,
+            TRY_CAST(@user_id AS UNIQUEIDENTIFIER),
+            @category,
+            @question_id,
+            @answer_value,
+            @impact_value
+          )
+        `);
     }
 
-    app.get("/pledges", async (req, res) => {
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error("❌ POST /responses/save error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// =====================================================
+// PLEDGES
+// =====================================================
+app.get("/pledges", async (req, res) => {
   try {
     const { user_id } = req.query;
     const pool = await getPool();
@@ -280,7 +180,6 @@ app.post("/responses/save", async (req, res) => {
         SELECT id, category, action, points_earned
         FROM user_pledges
         WHERE user_id = TRY_CAST(@user_id AS UNIQUEIDENTIFIER)
-        ORDER BY id DESC
       `);
 
     res.json(result.recordset);
@@ -290,14 +189,14 @@ app.post("/responses/save", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-  app.post("/pledges", async (req, res) => {
+
+app.post("/pledges", async (req, res) => {
   try {
     const { user_id, category, action, points_earned } = req.body;
     const pool = await getPool();
 
     const id = uuidv4();
 
-    // ✅ Insert pledge
     await pool.request()
       .input("id", id)
       .input("user_id", user_id)
@@ -321,7 +220,6 @@ app.post("/responses/save", async (req, res) => {
         )
       `);
 
-    // ✅ ADD: update user points
     await pool.request()
       .input("user_id", user_id)
       .input("points", points_earned)
@@ -339,6 +237,9 @@ app.post("/responses/save", async (req, res) => {
   }
 });
 
+// =====================================================
+// RENEWABLES
+// =====================================================
 app.get("/renewables", async (req, res) => {
   try {
     const { user_id } = req.query;
@@ -347,10 +248,8 @@ app.get("/renewables", async (req, res) => {
     const result = await pool.request()
       .input("user_id", user_id)
       .query(`
-        SELECT id, technology_type, points_cost, position_x, position_y
-        FROM user_renewables
+        SELECT * FROM user_renewables
         WHERE user_id = TRY_CAST(@user_id AS UNIQUEIDENTIFIER)
-        ORDER BY id DESC
       `);
 
     res.json(result.recordset);
@@ -360,6 +259,7 @@ app.get("/renewables", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 app.post("/renewables", async (req, res) => {
   try {
     const { user_id, technology_type, points_cost } = req.body;
@@ -394,21 +294,7 @@ app.post("/renewables", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-    res.json({ success: true });
 
-  } catch (err) {
-    console.error("❌ POST /pledges error:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-    res.json({ success: true });
-
-  } catch (err) {
-    console.error("❌ POST /responses/save error:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
 app.patch("/renewables", async (req, res) => {
   try {
     const { id, user_id, position_x, position_y } = req.body;
@@ -434,9 +320,11 @@ app.patch("/renewables", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 // =====================================================
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
   console.log("🚀 API running on port", PORT);
 });
+``
