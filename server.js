@@ -91,7 +91,39 @@ app.post("/profile/update", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+// =====================================================
+// CREATE USER (CRITICAL FIX)
+// =====================================================
+app.post("/create-user", async (req, res) => {
+  try {
+    const { user_id, email } = req.body;
+    const pool = await getPool();
 
+    await pool.request()
+      .input("user_id", user_id)
+      .input("email", email)
+      .query(`
+        IF NOT EXISTS (
+          SELECT 1 FROM profiles
+          WHERE user_id = TRY_CAST(@user_id AS UNIQUEIDENTIFIER)
+        )
+        BEGIN
+          INSERT INTO profiles (user_id, email, total_points)
+          VALUES (
+            TRY_CAST(@user_id AS UNIQUEIDENTIFIER),
+            @email,
+            0
+          )
+        END
+      `);
+
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error("❌ POST /create-user error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
 // =====================================================
 // RESPONSES
 // =====================================================
