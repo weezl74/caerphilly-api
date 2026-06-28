@@ -38,7 +38,7 @@ app.get("/", (req, res) => {
 });
 
 
-// ✅ ✅ NEW: LEADERBOARD ENDPOINT (THIS FIXES YOUR ISSUE)
+// ✅ ✅ LEADERBOARD (FIXED EARLIER)
 app.get("/profile", async (req, res) => {
   try {
     const pool = await getPool();
@@ -90,6 +90,45 @@ app.get("/profile/:id", async (req, res) => {
 });
 
 
+// ✅ ✅ CREATE USER (THIS FIXES YOUR 404)
+app.post("/create-user", async (req, res) => {
+  try {
+    const { user_id, display_name = "User" } = req.body;
+
+    const pool = await getPool();
+
+    // ✅ create profile if missing
+    await pool.request()
+      .input("user_id", user_id)
+      .input("display_name", display_name)
+      .query(`
+        IF NOT EXISTS (SELECT 1 FROM profiles WHERE user_id = @user_id)
+        BEGIN
+          INSERT INTO profiles (user_id, display_name)
+          VALUES (@user_id, @display_name)
+        END
+      `);
+
+    // ✅ create user_state if missing
+    await pool.request()
+      .input("user_id", user_id)
+      .query(`
+        IF NOT EXISTS (SELECT 1 FROM user_state WHERE user_id = @user_id)
+        BEGIN
+          INSERT INTO user_state (user_id, data)
+          VALUES (@user_id, '{"woolPoints":0,"treePoints":0}')
+        END
+      `);
+
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error("❌ create-user error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
 // ✅ UPDATE POINTS
 app.post("/update-points", async (req, res) => {
   try {
@@ -120,8 +159,6 @@ app.post("/update-points", async (req, res) => {
         WHERE user_id = TRY_CAST(@user_id AS UNIQUEIDENTIFIER)
       `);
 
-    console.log("✅ update applied:", finalWool);
-
     res.json({ success: true });
 
   } catch (err) {
@@ -131,7 +168,7 @@ app.post("/update-points", async (req, res) => {
 });
 
 
-// ✅ SPEND POINTS (compatibility layer)
+// ✅ COMPATIBILITY: spend points
 app.post("/spend-points", async (req, res) => {
   try {
     const { user_id, woolDelta = 0, reason = "" } = req.body;
