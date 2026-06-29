@@ -150,7 +150,27 @@ app.get("/stories", async (req, res) => {
     res.status(500).json({ error: "stories failed" });
   }
 });
+// ==============================
+// KUDOS (READ)
+// ==============================
+app.get("/kudos", async (req, res) => {
+  try {
+    const pool = await getPool();
 
+    const result = await pool.request().query(`
+      SELECT story_id, COUNT(*) AS kudos_count
+      FROM dbo.story_kudos
+      GROUP BY story_id
+    `);
+
+    res.json(result.recordset);
+
+  } catch (err) {
+    console.error("kudos error:", err);
+    res.status(500).json({ error: "kudos fetch failed" });
+  }
+});
+``
 // ==============================
 // SERVER
 // ==============================
