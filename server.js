@@ -221,7 +221,7 @@ app.get("/stories", async (req, res) => {
       SELECT
         s.id,
         s.user_id,
-        COALESCE(p.display_name, p.username, 'Member') AS author_name,
+      COALESCE(p.display_name, p.username, 'Member') AS display_name
         s.title,
         s.content AS body,
         s.image_url,
