@@ -212,7 +212,7 @@ app.get("/leaderboard", async (req, res) => {
 });
 
 // =====================================================
-// COMMUNITY STORIES (UUID‑SAFE JOIN)
+// COMMUNITY STORIES
 // =====================================================
 app.get("/stories", async (req, res) => {
   try {
@@ -221,7 +221,7 @@ app.get("/stories", async (req, res) => {
       SELECT
         s.id,
         s.user_id,
-        COALESCE(p.display_name, p.username, 'Member') AS username,
+        COALESCE(p.display_name, p.username, 'Member') AS author_name,
         s.title,
         s.content AS body,
         s.image_url,
@@ -247,6 +247,7 @@ app.get("/stories", async (req, res) => {
     res.status(500).json({ error: "stories fetch failed" });
   }
 });
+
 
 // =====================================================
 // SERVER
