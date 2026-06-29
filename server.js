@@ -12,7 +12,7 @@ app.use(express.json());
 const sqlConfig = {
   user: process.env.SQL_USER,
   password: process.env.SQL_PASSWORD,
-  database: process.env.SQL_DATABASE, // MUST be caerphilly-db-sql
+  database: process.env.SQL_DATABASE, // must be: caerphilly-db-sql
   server: process.env.SQL_SERVER,
   options: {
     encrypt: true,
@@ -37,18 +37,16 @@ app.post("/create-user", async (req, res) => {
     const pool = await getPool();
 
     await pool.request()
-      .input("user_id", sql.UniqueIdentifier, user_id)
-      .input("display_name", sql.NVarChar(255), display_name || null)
+      .input("user_id", sql.NVarChar, user_id)
+      .input("display_name", sql.NVarChar(255), display_name || "Member")
       .query(`
         IF NOT EXISTS (
           SELECT 1 FROM dbo.profiles WHERE user_id = @user_id
         )
-        BEGIN
-          INSERT INTO dbo.profiles
-            (user_id, display_name, wool_points, tree_points)
-          VALUES
-            (@user_id, @display_name, 0, 0)
-        END
+        INSERT INTO dbo.profiles
+          (user_id, display_name, wool_points, tree_points)
+        VALUES
+          (@user_id, @display_name, 0, 0)
       `);
 
     res.json({ success: true });
@@ -67,10 +65,15 @@ app.get("/profile", async (req, res) => {
     const pool = await getPool();
 
     const result = await pool.request()
-      .input("user_id", sql.UniqueIdentifier, user_id)
+      .input("user_id", sql.NVarChar, user_id)
       .query(`
-        SELECT user_id, display_name, username, account_type,
-               wool_points, tree_points
+        SELECT
+          user_id,
+          display_name,
+          username,
+          account_type,
+          wool_points,
+          tree_points
         FROM dbo.profiles
         WHERE user_id = @user_id
       `);
@@ -79,38 +82,6 @@ app.get("/profile", async (req, res) => {
   } catch (err) {
     console.error("profile error:", err);
     res.status(500).json({ error: "profile fetch failed" });
-  }
-});
-
-// =====================================================
-// PROFILE UPDATE
-// =====================================================
-app.post("/profile/update", async (req, res) => {
-  try {
-    const { user_id, ...updates } = req.body;
-    if (!user_id) return res.status(400).json({ error: "user_id required" });
-
-    const fields = Object.keys(updates);
-    if (!fields.length) return res.json({ success: true });
-
-    const pool = await getPool();
-    const setClause = fields.map(f => `[${f}] = @${f}`).join(", ");
-
-    const request = pool.request()
-      .input("user_id", sql.UniqueIdentifier, user_id);
-
-    fields.forEach(f => request.input(f, updates[f]));
-
-    await request.query(`
-      UPDATE dbo.profiles
-      SET ${setClause}
-      WHERE user_id = @user_id
-    `);
-
-    res.json({ success: true });
-  } catch (err) {
-    console.error("profile update error:", err);
-    res.status(500).json({ error: "profile update failed" });
   }
 });
 
@@ -145,7 +116,7 @@ app.post("/pledges", async (req, res) => {
     const pool = await getPool();
 
     await pool.request()
-      .input("user_id", sql.UniqueIdentifier, user_id)
+      .input("user_id", sql.NVarChar, user_id)
       .input("points", sql.Int, points)
       .query(`
         UPDATE dbo.profiles
@@ -169,11 +140,11 @@ app.get("/sprints", async (req, res) => {
     const pool = await getPool();
 
     const result = await pool.request()
-      .input("user_id", sql.UniqueIdentifier, user_id)
+      .input("user_id", sql.NVarChar, user_id)
       .query(`
         SELECT sprint_key, data
         FROM dbo.user_sprints
-        WHERE user_id = @user_id
+        WHERE user_id = TRY_CONVERT(uniqueidentifier, @user_id)
       `);
 
     res.json(result.recordset);
@@ -189,22 +160,25 @@ app.post("/sprints/save", async (req, res) => {
     const pool = await getPool();
 
     await pool.request()
-      .input("user_id", sql.UniqueIdentifier, user_id)
+      .input("user_id", sql.NVarChar, user_id)
       .input("sprint_key", sql.NVarChar, sprint_key)
       .input("data", sql.NVarChar, JSON.stringify(data))
       .query(`
         IF EXISTS (
           SELECT 1 FROM dbo.user_sprints
-          WHERE user_id = @user_id AND sprint_key = @sprint_key
+          WHERE user_id = TRY_CONVERT(uniqueidentifier, @user_id)
+            AND sprint_key = @sprint_key
         )
           UPDATE dbo.user_sprints
           SET data = @data, updated_at = GETDATE()
-          WHERE user_id = @user_id AND sprint_key = @sprint_key
+          WHERE user_id = TRY_CONVERT(uniqueidentifier, @user_id)
+            AND sprint_key = @sprint_key
         ELSE
           INSERT INTO dbo.user_sprints
             (user_id, sprint_key, data, created_at, updated_at)
           VALUES
-            (@user_id, @sprint_key, @data, GETDATE(), GETDATE())
+            (TRY_CONVERT(uniqueidentifier, @user_id),
+             @sprint_key, @data, GETDATE(), GETDATE())
       `);
 
     res.json({ success: true });
@@ -221,9 +195,9 @@ app.get("/leaderboard", async (req, res) => {
   try {
     const pool = await getPool();
     const result = await pool.request().query(`
-      SELECT TOP 100
+      SELECT
         user_id,
-        COALESCE(display_name, username, 'Member') AS display_name,
+        COALESCE(display_name, username, 'Member') AS username,
         wool_points,
         tree_points,
         (ISNULL(wool_points, 0) + ISNULL(tree_points, 0)) AS total_points
@@ -238,19 +212,18 @@ app.get("/leaderboard", async (req, res) => {
 });
 
 // =====================================================
-// COMMUNITY STORIES
+// COMMUNITY STORIES (UUID‑SAFE JOIN)
 // =====================================================
 app.get("/stories", async (req, res) => {
   try {
     const pool = await getPool();
-
     const result = await pool.request().query(`
       SELECT
         s.id,
         s.user_id,
-        COALESCE(p.display_name, p.username, 'Member') AS author_name,
+        COALESCE(p.display_name, p.username, 'Member') AS username,
         s.title,
-        s.content,
+        s.content AS body,
         s.image_url,
         s.run_type,
         s.points_earned,
@@ -258,30 +231,22 @@ app.get("/stories", async (req, res) => {
         COUNT(k.id) AS kudos_count
       FROM dbo.user_stories s
       LEFT JOIN dbo.profiles p
-        ON p.user_id = s.user_id
+        ON TRY_CONVERT(uniqueidentifier, p.user_id) = s.user_id
       LEFT JOIN dbo.story_kudos k
         ON k.story_id = s.id
       GROUP BY
-        s.id,
-        s.user_id,
-        p.display_name,
-        p.username,
-        s.title,
-        s.content,
-        s.image_url,
-        s.run_type,
-        s.points_earned,
-        s.created_at
+        s.id, s.user_id,
+        p.display_name, p.username,
+        s.title, s.content, s.image_url,
+        s.run_type, s.points_earned, s.created_at
       ORDER BY s.created_at DESC
     `);
-
     res.json(result.recordset);
   } catch (err) {
     console.error("stories error:", err);
     res.status(500).json({ error: "stories fetch failed" });
   }
 });
-``
 
 // =====================================================
 // SERVER
