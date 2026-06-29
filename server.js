@@ -214,25 +214,35 @@ app.get("/leaderboard", async (req, res) => {
 // =====================================================
 // COMMUNITY STORIES
 // =====================================================
-const result = await pool.request().query(`
-SELECT
-  s.id,
-  s.user_id,
-  COALESCE(p.display_name, p.username, 'Member') AS display_name,
-  s.title,
-  s.content AS body,
-  s.image_url,
-  s.run_type,
-  s.points_earned,
-  s.created_at,
-  (
-    SELECT COUNT(*)
-    FROM dbo.story_kudos k
-    WHERE k.story_id = s.id
-  ) AS kudos_count
-FROM dbo.user_stories s
-LEFT JOIN dbo.profiles p
-  ON TRY_CONVERT(uniqueidentifier, p.user_id) = s.user_id
-ORDER BY s.created_at DESC
-`);
+app.get("/stories", async (req, res) => {
+  try {
+    const pool = await getPool();
 
+    const result = await pool.request().query(`
+      SELECT
+        s.id,
+        s.user_id,
+        COALESCE(p.display_name, p.username, 'Member') AS display_name,
+        s.title,
+        s.content AS body,
+        s.image_url,
+        s.run_type,
+        s.points_earned,
+        s.created_at,
+        (
+          SELECT COUNT(*)
+          FROM dbo.story_kudos k
+          WHERE TRY_CONVERT(uniqueidentifier, k.story_id) = s.id
+        ) AS kudos_count
+      FROM dbo.user_stories s
+      LEFT JOIN dbo.profiles p
+        ON TRY_CONVERT(uniqueidentifier, p.user_id) = s.user_id
+      ORDER BY s.created_at DESC
+    `);
+
+    res.json(result.recordset);
+  } catch (err) {
+    console.error("stories error:", err);
+    res.status(500).json({ error: "stories fetch failed" });
+  }
+});
