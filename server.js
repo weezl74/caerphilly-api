@@ -227,7 +227,71 @@ app.post("/sprints/save", async (req, res) => {
     res.status(500).json({ error: "sprints save failed" });
   }
 });
+// =====================================================
+// LEADERBOARD
+// =====================================================
+app.get("/leaderboard", async (req, res) => {
+  try {
+    const pool = await getPool();
 
+    const result = await pool.request().query(`
+      SELECT TOP 100
+        user_id,
+        COALESCE(display_name, username, 'Member') AS display_name,
+        wool_points,
+        tree_points,
+        (ISNULL(wool_points, 0) + ISNULL(tree_points, 0)) AS total_points
+      FROM profiles
+      ORDER BY total_points DESC
+    `);
+
+    res.json(result.recordset);
+  } catch (err) {
+    console.error("❌ leaderboard error:", err);
+    res.status(500).json({ error: "leaderboard fetch failed" });
+  }
+});
+
+// =====================================================
+// COMMUNITY STORIES
+// =====================================================
+app.get("/stories", async (req, res) => {
+  try {
+    const pool = await getPool();
+
+    const result = await pool.request().query(`
+      SELECT
+        s.id,
+        s.user_id,
+        COALESCE(p.display_name, p.username, 'Member') AS author_name,
+        s.title,
+        s.body,
+        s.image_url,
+        s.created_at,
+        COUNT(k.id) AS kudos_count
+      FROM user_stories s
+      LEFT JOIN profiles p
+        ON p.user_id = s.user_id
+      LEFT JOIN story_kudos k
+        ON k.story_id = s.id
+      GROUP BY
+        s.id,
+        s.user_id,
+        p.display_name,
+        p.username,
+        s.title,
+        s.body,
+        s.image_url,
+        s.created_at
+      ORDER BY s.created_at DESC
+    `);
+
+    res.json(result.recordset);
+  } catch (err) {
+    console.error("❌ stories error:", err);
+    res.status(500).json({ error: "stories fetch failed" });
+  }
+});
 // =====================================================
 // SERVER
 // =====================================================
