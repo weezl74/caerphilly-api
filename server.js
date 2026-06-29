@@ -21,7 +21,7 @@ const sqlConfig = {
 };
 
 // ==============================
-// DB CONNECTION
+// DB CONNECTION (NO top-level await)
 // ==============================
 let pool;
 
@@ -33,25 +33,28 @@ async function getPool() {
 }
 
 // ==============================
-// PROFILE
+// TEST ROUTE (to confirm server)
 // ==============================
-app.get("/profile", async (req, res) => {
+app.get("/", (req, res) => {
+  res.send("API running");
+});
+
+// ==============================
+// STORIES (VERY SIMPLE - SAFE)
+// ==============================
+app.get("/stories", async (req, res) => {
   try {
-    const { user_id } = req.query;
     const pool = await getPool();
 
-    const result = await pool.request()
-      .input("user_id", sql.NVarChar, user_id)
-      .query(`
-        SELECT user_id, display_name, username, wool_points, tree_points
-        FROM dbo.profiles
-        WHERE user_id = @user_id
-      `);
+    const result = await pool.request().query(
+      "SELECT id, user_id, title, content AS body, created_at FROM dbo.user_stories"
+    );
 
-    res.json(result.recordset[0] || null);
+    res.json(result.recordset);
+
   } catch (err) {
-    console.error("profile error:", err);
-    res.status(500).json({ error: "profile failed" });
+    console.error("stories error:", err);
+    res.status(500).json({ error: "stories failed" });
   }
 });
 
@@ -62,42 +65,17 @@ app.get("/leaderboard", async (req, res) => {
   try {
     const pool = await getPool();
 
-    const result = await pool.request().query(`
-      SELECT
-        user_id,
-        COALESCE(display_name, username, 'Member') AS display_name,
-        wool_points,
-        tree_points,
-        ISNULL(wool_points,0) + ISNULL(tree_points,0) AS total_points
-      FROM dbo.profiles
-      ORDER BY total_points DESC
-    `);
+    const result = await pool.request().query(
+      "SELECT user_id, COALESCE(display_name, username, 'Member') AS display_name, wool_points, tree_points FROM dbo.profiles"
+    );
 
     res.json(result.recordset);
+
   } catch (err) {
     console.error("leaderboard error:", err);
     res.status(500).json({ error: "leaderboard failed" });
   }
 });
-
-// ==============================
-// STORIES (MINIMAL + SAFE)
-// ==============================
-const result = await pool.request().query(
-  `
-SELECT
-  s.id,
-  s.user_id,
-  COALESCE(p.display_name, 'Member') AS display_name,
-  s.title,
-  s.content AS body,
-  s.created_at
-FROM dbo.user_stories s
-LEFT JOIN dbo.profiles p
-  ON TRY_CONVERT(uniqueidentifier, p.user_id) = s.user_id
-ORDER BY s.created_at DESC
-  `
-);
 
 // ==============================
 // SERVER
