@@ -12,7 +12,7 @@ app.use(express.json());
 const sqlConfig = {
   user: process.env.SQL_USER,
   password: process.env.SQL_PASSWORD,
-  database: process.env.SQL_DATABASE,
+  database: process.env.SQL_DATABASE, // MUST be caerphilly-db-sql
   server: process.env.SQL_SERVER,
   options: {
     encrypt: true,
@@ -22,9 +22,7 @@ const sqlConfig = {
 
 let pool;
 async function getPool() {
-  if (!pool) {
-    pool = await sql.connect(sqlConfig);
-  }
+  if (!pool) pool = await sql.connect(sqlConfig);
   return pool;
 }
 
@@ -33,38 +31,23 @@ async function getPool() {
 // =====================================================
 app.post("/create-user", async (req, res) => {
   try {
-    const user_id = req.body.user_id;
-    const display_name =
-      typeof req.body.display_name === "string"
-        ? req.body.display_name
-        : null;
-
-    if (!user_id) {
-      return res.status(400).json({ error: "user_id required" });
-    }
+    const { user_id, display_name } = req.body;
+    if (!user_id) return res.status(400).json({ error: "user_id required" });
 
     const pool = await getPool();
 
     await pool.request()
       .input("user_id", sql.UniqueIdentifier, user_id)
-      .input("display_name", sql.NVarChar(255), display_name)
+      .input("display_name", sql.NVarChar(255), display_name || null)
       .query(`
         IF NOT EXISTS (
           SELECT 1 FROM dbo.profiles WHERE user_id = @user_id
         )
         BEGIN
-          INSERT INTO dbo.profiles (
-            user_id,
-            display_name,
-            wool_points,
-            tree_points
-          )
-          VALUES (
-            @user_id,
-            @display_name,
-            0,
-            0
-          )
+          INSERT INTO dbo.profiles
+            (user_id, display_name, wool_points, tree_points)
+          VALUES
+            (@user_id, @display_name, 0, 0)
         END
       `);
 
@@ -86,20 +69,15 @@ app.get("/profile", async (req, res) => {
     const result = await pool.request()
       .input("user_id", sql.UniqueIdentifier, user_id)
       .query(`
-        SELECT
-          user_id,
-          display_name,
-          username,
-          account_type,
-          wool_points,
-          tree_points
+        SELECT user_id, display_name, username, account_type,
+               wool_points, tree_points
         FROM dbo.profiles
         WHERE user_id = @user_id
       `);
 
     res.json(result.recordset[0] || null);
   } catch (err) {
-    console.error("profile fetch error:", err);
+    console.error("profile error:", err);
     res.status(500).json({ error: "profile fetch failed" });
   }
 });
@@ -110,18 +88,14 @@ app.get("/profile", async (req, res) => {
 app.post("/profile/update", async (req, res) => {
   try {
     const { user_id, ...updates } = req.body;
-    const pool = await getPool();
-
-    if (!user_id) {
-      return res.status(400).json({ error: "user_id required" });
-    }
+    if (!user_id) return res.status(400).json({ error: "user_id required" });
 
     const fields = Object.keys(updates);
-    if (!fields.length) {
-      return res.json({ success: true });
-    }
+    if (!fields.length) return res.json({ success: true });
 
+    const pool = await getPool();
     const setClause = fields.map(f => `[${f}] = @${f}`).join(", ");
+
     const request = pool.request()
       .input("user_id", sql.UniqueIdentifier, user_id);
 
@@ -141,12 +115,29 @@ app.post("/profile/update", async (req, res) => {
 });
 
 // =====================================================
-// PLEDGES / POINTS
+// PLEDGES (READ)
+// =====================================================
+app.get("/pledges", async (req, res) => {
+  try {
+    const pool = await getPool();
+    const result = await pool.request().query(`
+      SELECT id, title, description, points, category
+      FROM dbo.pledges
+      ORDER BY id
+    `);
+    res.json(result.recordset);
+  } catch (err) {
+    console.error("pledges read error:", err);
+    res.status(500).json({ error: "pledges fetch failed" });
+  }
+});
+
+// =====================================================
+// PLEDGES (ACTIVATE / POINTS)
 // =====================================================
 app.post("/pledges", async (req, res) => {
   try {
     const { user_id, points } = req.body;
-
     if (!user_id || typeof points !== "number") {
       return res.status(400).json({ error: "user_id and points required" });
     }
@@ -164,7 +155,7 @@ app.post("/pledges", async (req, res) => {
 
     res.json({ success: true });
   } catch (err) {
-    console.error("pledges error:", err);
+    console.error("pledges write error:", err);
     res.status(500).json({ error: "pledges failed" });
   }
 });
@@ -187,7 +178,7 @@ app.get("/sprints", async (req, res) => {
 
     res.json(result.recordset);
   } catch (err) {
-    console.error("sprints fetch error:", err);
+    console.error("sprints error:", err);
     res.status(500).json({ error: "sprints fetch failed" });
   }
 });
@@ -229,7 +220,6 @@ app.post("/sprints/save", async (req, res) => {
 app.get("/leaderboard", async (req, res) => {
   try {
     const pool = await getPool();
-
     const result = await pool.request().query(`
       SELECT TOP 100
         user_id,
@@ -240,7 +230,6 @@ app.get("/leaderboard", async (req, res) => {
       FROM dbo.profiles
       ORDER BY total_points DESC
     `);
-
     res.json(result.recordset);
   } catch (err) {
     console.error("leaderboard error:", err);
@@ -249,12 +238,11 @@ app.get("/leaderboard", async (req, res) => {
 });
 
 // =====================================================
-// COMMUNITY STORIES (READ)
+// COMMUNITY STORIES
 // =====================================================
 app.get("/stories", async (req, res) => {
   try {
     const pool = await getPool();
-
     const result = await pool.request().query(`
       SELECT
         s.id,
@@ -266,22 +254,13 @@ app.get("/stories", async (req, res) => {
         s.created_at,
         COUNT(k.id) AS kudos_count
       FROM dbo.user_stories s
-      LEFT JOIN dbo.profiles p
-        ON p.user_id = s.user_id
-      LEFT JOIN dbo.story_kudos k
-        ON k.story_id = s.id
+      LEFT JOIN dbo.profiles p ON p.user_id = s.user_id
+      LEFT JOIN dbo.story_kudos k ON k.story_id = s.id
       GROUP BY
-        s.id,
-        s.user_id,
-        p.display_name,
-        p.username,
-        s.title,
-        s.body,
-        s.image_url,
-        s.created_at
+        s.id, s.user_id, p.display_name, p.username,
+        s.title, s.body, s.image_url, s.created_at
       ORDER BY s.created_at DESC
     `);
-
     res.json(result.recordset);
   } catch (err) {
     console.error("stories error:", err);
@@ -292,7 +271,7 @@ app.get("/stories", async (req, res) => {
 // =====================================================
 // SERVER
 // =====================================================
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`API running on port ${PORT}`);
 });
