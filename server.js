@@ -105,6 +105,42 @@ app.get("/profile", async (req, res) => {
 });
 
 // =====================================================
+// PROFILE UPDATE
+// =====================================================
+app.post("/profile/update", async (req, res) => {
+  try {
+    const { user_id, ...updates } = req.body;
+    const pool = await getPool();
+
+    if (!user_id) {
+      return res.status(400).json({ error: "user_id required" });
+    }
+
+    const fields = Object.keys(updates);
+    if (!fields.length) {
+      return res.json({ success: true });
+    }
+
+    const setClause = fields.map(f => `[${f}] = @${f}`).join(", ");
+    const request = pool.request()
+      .input("user_id", sql.UniqueIdentifier, user_id);
+
+    fields.forEach(f => request.input(f, updates[f]));
+
+    await request.query(`
+      UPDATE dbo.profiles
+      SET ${setClause}
+      WHERE user_id = @user_id
+    `);
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("profile update error:", err);
+    res.status(500).json({ error: "profile update failed" });
+  }
+});
+
+// =====================================================
 // PLEDGES / POINTS
 // =====================================================
 app.post("/pledges", async (req, res) => {
@@ -130,6 +166,126 @@ app.post("/pledges", async (req, res) => {
   } catch (err) {
     console.error("pledges error:", err);
     res.status(500).json({ error: "pledges failed" });
+  }
+});
+
+// =====================================================
+// SPRINTS
+// =====================================================
+app.get("/sprints", async (req, res) => {
+  try {
+    const { user_id } = req.query;
+    const pool = await getPool();
+
+    const result = await pool.request()
+      .input("user_id", sql.UniqueIdentifier, user_id)
+      .query(`
+        SELECT sprint_key, data
+        FROM dbo.user_sprints
+        WHERE user_id = @user_id
+      `);
+
+    res.json(result.recordset);
+  } catch (err) {
+    console.error("sprints fetch error:", err);
+    res.status(500).json({ error: "sprints fetch failed" });
+  }
+});
+
+app.post("/sprints/save", async (req, res) => {
+  try {
+    const { user_id, sprint_key, data } = req.body;
+    const pool = await getPool();
+
+    await pool.request()
+      .input("user_id", sql.UniqueIdentifier, user_id)
+      .input("sprint_key", sql.NVarChar, sprint_key)
+      .input("data", sql.NVarChar, JSON.stringify(data))
+      .query(`
+        IF EXISTS (
+          SELECT 1 FROM dbo.user_sprints
+          WHERE user_id = @user_id AND sprint_key = @sprint_key
+        )
+          UPDATE dbo.user_sprints
+          SET data = @data, updated_at = GETDATE()
+          WHERE user_id = @user_id AND sprint_key = @sprint_key
+        ELSE
+          INSERT INTO dbo.user_sprints
+            (user_id, sprint_key, data, created_at, updated_at)
+          VALUES
+            (@user_id, @sprint_key, @data, GETDATE(), GETDATE())
+      `);
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("sprints save error:", err);
+    res.status(500).json({ error: "sprints save failed" });
+  }
+});
+
+// =====================================================
+// LEADERBOARD
+// =====================================================
+app.get("/leaderboard", async (req, res) => {
+  try {
+    const pool = await getPool();
+
+    const result = await pool.request().query(`
+      SELECT TOP 100
+        user_id,
+        COALESCE(display_name, username, 'Member') AS display_name,
+        wool_points,
+        tree_points,
+        (ISNULL(wool_points, 0) + ISNULL(tree_points, 0)) AS total_points
+      FROM dbo.profiles
+      ORDER BY total_points DESC
+    `);
+
+    res.json(result.recordset);
+  } catch (err) {
+    console.error("leaderboard error:", err);
+    res.status(500).json({ error: "leaderboard fetch failed" });
+  }
+});
+
+// =====================================================
+// COMMUNITY STORIES (READ)
+// =====================================================
+app.get("/stories", async (req, res) => {
+  try {
+    const pool = await getPool();
+
+    const result = await pool.request().query(`
+      SELECT
+        s.id,
+        s.user_id,
+        COALESCE(p.display_name, p.username, 'Member') AS author_name,
+        s.title,
+        s.body,
+        s.image_url,
+        s.created_at,
+        COUNT(k.id) AS kudos_count
+      FROM dbo.user_stories s
+      LEFT JOIN dbo.profiles p
+        ON p.user_id = s.user_id
+      LEFT JOIN dbo.story_kudos k
+        ON k.story_id = s.id
+      GROUP BY
+        s.id,
+        s.user_id,
+        p.display_name,
+        p.username,
+        s.title,
+        s.body,
+        s.image_url,
+        s.created_at
+      ORDER BY s.created_at DESC
+    `);
+
+    res.json(result.recordset);
+  } catch (err) {
+    console.error("stories error:", err);
+    res.status(500).json({ error: "stories fetch failed" });
   }
 });
 
