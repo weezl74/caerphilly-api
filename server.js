@@ -214,40 +214,34 @@ app.get("/leaderboard", async (req, res) => {
 // =====================================================
 // COMMUNITY STORIES
 // =====================================================
-app.get("/stories", async (req, res) => {
-  try {
-    const pool = await getPool();
-    const result = await pool.request().query(`
-      SELECT
-        s.id,
-        s.user_id,
-      COALESCE(p.display_name, p.username, 'Member') AS display_name
-        s.title,
-        s.content AS body,
-        s.image_url,
-        s.run_type,
-        s.points_earned,
-        s.created_at,
-        COUNT(k.id) AS kudos_count
-      FROM dbo.user_stories s
-      LEFT JOIN dbo.profiles p
-        ON TRY_CONVERT(uniqueidentifier, p.user_id) = s.user_id
-      LEFT JOIN dbo.story_kudos k
-        ON k.story_id = s.id
-      GROUP BY
-        s.id, s.user_id,
-        p.display_name, p.username,
-        s.title, s.content, s.image_url,
-        s.run_type, s.points_earned, s.created_at
-      ORDER BY s.created_at DESC
-    `);
-    res.json(result.recordset);
-  } catch (err) {
-    console.error("stories error:", err);
-    res.status(500).json({ error: "stories fetch failed" });
-  }
-});
+SELECT
+  s.id,
+  s.user_id,
 
+  -- ✅ canonical field used by UI
+  COALESCE(p.display_name, p.username, 'Member') AS display_name,
+
+  -- ✅ legacy / compatibility field
+  COALESCE(p.display_name, p.username, 'Member') AS author_name,
+
+  s.title,
+  s.content AS body,
+  s.image_url,
+  s.run_type,
+  s.points_earned,
+  s.created_at,
+  COUNT(k.id) AS kudos_count
+FROM dbo.user_stories s
+LEFT JOIN dbo.profiles p
+  ON TRY_CONVERT(uniqueidentifier, p.user_id) = s.user_id
+LEFT JOIN dbo.story_kudos k
+  ON k.story_id = s.id
+GROUP BY
+  s.id, s.user_id,
+  p.display_name, p.username,
+  s.title, s.content, s.image_url,
+  s.run_type, s.points_earned, s.created_at
+ORDER BY s.created_at DESC;
 
 // =====================================================
 // SERVER
