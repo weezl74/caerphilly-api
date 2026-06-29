@@ -218,7 +218,6 @@ SELECT
   s.id,
   s.user_id,
 
-  -- ✅ canonical field used by UI
   COALESCE(p.display_name, p.username, 'Member') AS display_name,
 
   s.title,
