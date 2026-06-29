@@ -243,30 +243,45 @@ app.get("/leaderboard", async (req, res) => {
 app.get("/stories", async (req, res) => {
   try {
     const pool = await getPool();
+
     const result = await pool.request().query(`
       SELECT
         s.id,
         s.user_id,
         COALESCE(p.display_name, p.username, 'Member') AS author_name,
         s.title,
-        s.body,
+        s.content,
         s.image_url,
+        s.run_type,
+        s.points_earned,
         s.created_at,
         COUNT(k.id) AS kudos_count
       FROM dbo.user_stories s
-      LEFT JOIN dbo.profiles p ON p.user_id = s.user_id
-      LEFT JOIN dbo.story_kudos k ON k.story_id = s.id
+      LEFT JOIN dbo.profiles p
+        ON p.user_id = s.user_id
+      LEFT JOIN dbo.story_kudos k
+        ON k.story_id = s.id
       GROUP BY
-        s.id, s.user_id, p.display_name, p.username,
-        s.title, s.body, s.image_url, s.created_at
+        s.id,
+        s.user_id,
+        p.display_name,
+        p.username,
+        s.title,
+        s.content,
+        s.image_url,
+        s.run_type,
+        s.points_earned,
+        s.created_at
       ORDER BY s.created_at DESC
     `);
+
     res.json(result.recordset);
   } catch (err) {
     console.error("stories error:", err);
     res.status(500).json({ error: "stories fetch failed" });
   }
 });
+``
 
 // =====================================================
 // SERVER
