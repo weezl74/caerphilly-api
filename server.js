@@ -221,9 +221,6 @@ SELECT
   -- ✅ canonical field used by UI
   COALESCE(p.display_name, p.username, 'Member') AS display_name,
 
-  -- ✅ legacy / compatibility field
-  COALESCE(p.display_name, p.username, 'Member') AS author_name,
-
   s.title,
   s.content AS body,
   s.image_url,
