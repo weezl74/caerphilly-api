@@ -214,35 +214,25 @@ app.get("/leaderboard", async (req, res) => {
 // =====================================================
 // COMMUNITY STORIES
 // =====================================================
+const result = await pool.request().query(`
 SELECT
   s.id,
   s.user_id,
-
   COALESCE(p.display_name, p.username, 'Member') AS display_name,
-
   s.title,
   s.content AS body,
   s.image_url,
   s.run_type,
   s.points_earned,
   s.created_at,
-  COUNT(k.id) AS kudos_count
+  (
+    SELECT COUNT(*)
+    FROM dbo.story_kudos k
+    WHERE k.story_id = s.id
+  ) AS kudos_count
 FROM dbo.user_stories s
 LEFT JOIN dbo.profiles p
   ON TRY_CONVERT(uniqueidentifier, p.user_id) = s.user_id
-LEFT JOIN dbo.story_kudos k
-  ON k.story_id = s.id
-GROUP BY
-  s.id, s.user_id,
-  p.display_name, p.username,
-  s.title, s.content, s.image_url,
-  s.run_type, s.points_earned, s.created_at
-ORDER BY s.created_at DESC;
+ORDER BY s.created_at DESC
+`);
 
-// =====================================================
-// SERVER
-// =====================================================
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => {
-  console.log(`API running on port ${PORT}`);
-});
