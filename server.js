@@ -83,22 +83,21 @@ app.get("/leaderboard", async (req, res) => {
 // ==============================
 // STORIES (MINIMAL + SAFE)
 // ==============================
-app.get("/stories", async (req, res) => {
-  try {
-    const pool = await getPool();
-
-    // ✅ START VERY SIMPLE (no joins yet)
-    const result = await pool.request().query(
-      "SELECT id, user_id, title, content AS body, created_at FROM dbo.user_stories"
-    );
-
-    res.json(result.recordset);
-
-  } catch (err) {
-    console.error("stories error:", err);
-    res.status(500).json({ error: "stories failed" });
-  }
-});
+const result = await pool.request().query(
+  `
+SELECT
+  s.id,
+  s.user_id,
+  COALESCE(p.display_name, 'Member') AS display_name,
+  s.title,
+  s.content AS body,
+  s.created_at
+FROM dbo.user_stories s
+LEFT JOIN dbo.profiles p
+  ON TRY_CONVERT(uniqueidentifier, p.user_id) = s.user_id
+ORDER BY s.created_at DESC
+  `
+);
 
 // ==============================
 // SERVER
