@@ -134,59 +134,21 @@ app.post("/pledges", async (req, res) => {
 // =====================================================
 // SPRINTS
 // =====================================================
-app.get("/sprints", async (req, res) => {
-  try {
-    const { user_id } = req.query;
-    const pool = await getPool();
-
-    const result = await pool.request()
-      .input("user_id", sql.NVarChar, user_id)
-      .query(`
-        SELECT sprint_key, data
-        FROM dbo.user_sprints
-        WHERE user_id = TRY_CONVERT(uniqueidentifier, @user_id)
-      `);
-
-    res.json(result.recordset);
-  } catch (err) {
-    console.error("sprints error:", err);
-    res.status(500).json({ error: "sprints fetch failed" });
-  }
-});
-
-app.post("/sprints/save", async (req, res) => {
-  try {
-    const { user_id, sprint_key, data } = req.body;
-    const pool = await getPool();
-
-    await pool.request()
-      .input("user_id", sql.NVarChar, user_id)
-      .input("sprint_key", sql.NVarChar, sprint_key)
-      .input("data", sql.NVarChar, JSON.stringify(data))
-      .query(`
-        IF EXISTS (
-          SELECT 1 FROM dbo.user_sprints
-          WHERE user_id = TRY_CONVERT(uniqueidentifier, @user_id)
-            AND sprint_key = @sprint_key
-        )
-          UPDATE dbo.user_sprints
-          SET data = @data, updated_at = GETDATE()
-          WHERE user_id = TRY_CONVERT(uniqueidentifier, @user_id)
-            AND sprint_key = @sprint_key
-        ELSE
-          INSERT INTO dbo.user_sprints
-            (user_id, sprint_key, data, created_at, updated_at)
-          VALUES
-            (TRY_CONVERT(uniqueidentifier, @user_id),
-             @sprint_key, @data, GETDATE(), GETDATE())
-      `);
-
-    res.json({ success: true });
-  } catch (err) {
-    console.error("sprints save error:", err);
-    res.status(500).json({ error: "sprints save failed" });
-  }
-});
+const result = await pool.request().query(
+`SELECT s.id,
+ s.user_id,
+ COALESCE(p.display_name, p.username, 'Member') AS display_name,
+ s.title,
+ s.content AS body,
+ s.image_url,
+ s.run_type,
+ s.points_earned,
+ s.created_at,
+ (SELECT COUNT(*) FROM dbo.story_kudos k WHERE TRY_CONVERT(uniqueidentifier, k.story_id) = s.id) AS kudos_count
+FROM dbo.user_stories s
+LEFT JOIN dbo.profiles p ON TRY_CONVERT(uniqueidentifier, p.user_id) = s.user_id
+ORDER BY s.created_at DESC`
+);
 
 // =====================================================
 // LEADERBOARD
