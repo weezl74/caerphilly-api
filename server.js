@@ -142,7 +142,39 @@ app.post("/profile/update", async (req, res) => {
   }
 });
 
-// =====================================================
+// // =====================================================
 // PLEDGES / POINTS
 // =====================================================
-JavaScript1// =====================================================2// PLEDGES / POINTS3// =====================================================4app.post("/pledges", async (req, res) => {5  try {6    const { user_id, points } = req.body;7 8    if (!user_id || typeof points !== "number") {9      return res.status(400).json({ error: "user_id and points required" });10    }11 12    const pool = await getPool();13 14    await pool.request()15      .input("user_id", sql.UniqueIdentifier, user_id)16      .input("points", sql.Int, points)17      .query(`18        UPDATE profiles19        SET wool_points = ISNULL(wool_points, 0) + @points20        WHERE user_id = @user_id21      `);22 23    res.json({ success: true });24  } catch (err) {25    console.error("❌ pledges error:", err);26    res.status(500).json({ error: "pledges failed" });27  }28});
+app.post("/pledges", async (req, res) => {
+  try {
+    const { user_id, points } = req.body;
+
+    if (!user_id || typeof points !== "number") {
+      return res.status(400).json({ error: "user_id and points required" });
+    }
+
+    const pool = await getPool();
+
+    await pool.request()
+      .input("user_id", sql.UniqueIdentifier, user_id)
+      .input("points", sql.Int, points)
+      .query(`
+        UPDATE profiles
+        SET wool_points = ISNULL(wool_points, 0) + @points
+        WHERE user_id = @user_id
+      `);
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("❌ pledges error:", err);
+    res.status(500).json({ error: "pledges failed" });
+  }
+});
+
+// =====================================================
+// SERVER
+// =====================================================
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`✅ API running on port ${PORT}`);
+});
