@@ -145,4 +145,4 @@ app.post("/profile/update", async (req, res) => {
 // =====================================================
 // PLEDGES / POINTS
 // =====================================================
-app.post("/pledges", async (req, res
+JavaScript1// =====================================================2// PLEDGES / POINTS3// =====================================================4app.post("/pledges", async (req, res) => {5  try {6    const { user_id, points } = req.body;7 8    if (!user_id || typeof points !== "number") {9      return res.status(400).json({ error: "user_id and points required" });10    }11 12    const pool = await getPool();13 14    await pool.request()15      .input("user_id", sql.UniqueIdentifier, user_id)16      .input("points", sql.Int, points)17      .query(`18        UPDATE profiles19        SET wool_points = ISNULL(wool_points, 0) + @points20        WHERE user_id = @user_id21      `);22 23    res.json({ success: true });24  } catch (err) {25    console.error("❌ pledges error:", err);26    res.status(500).json({ error: "pledges failed" });27  }28});
