@@ -1,1 +1,142 @@
-const express = require("express");2const cors = require("cors");3const sql = require("mssql");4 5const app = express();6app.use(cors());7app.use(express.json());8 9// =====================================================10// SQL CONFIG (AZURE SQL)11// =====================================================12const sqlConfig = {13  user: process.env.SQL_USER,14  password: process.env.SQL_PASSWORD,15  database: process.env.SQL_DATABASE,16  server: process.env.SQL_SERVER,17  options: {18    encrypt: true,19    trustServerCertificate: false,20  },21};22 23let pool;24async function getPool() {25  if (!pool) {26    pool = await sql.connect(sqlConfig);27  }28  return pool;29}30 31// =====================================================32// CREATE USER33// =====================================================34app.post("/create-user", async (req, res) => {35  try {36    const user_id = req.body.user_id;37    const display_name =38      typeof req.body.display_name === "string"39        ? req.body.display_name40        : null;41 42    if (!user_id) {43      return res.status(400).json({ error: "user_id required" });44    }45 46    const pool = await getPool();47 48    await pool.request()49      .input("user_id", sql.UniqueIdentifier, user_id)50      .input("display_name", sql.NVarChar(255), display_name)51      .query(`52        IF NOT EXISTS (53          SELECT 1 FROM dbo.profiles WHERE user_id = @user_id54        )55        BEGIN56          INSERT INTO dbo.profiles (57            user_id,58            display_name,59            wool_points,60            tree_points61          )62          VALUES (63            @user_id,64            @display_name,65            0,66            067          )68        END69      `);70 71    res.json({ success: true });72  } catch (err) {73    console.error("create-user error:", err);74    res.status(500).json({ error: "create-user failed" });75  }76});77 78// =====================================================79// PROFILE80// =====================================================81app.get("/profile", async (req, res) => {82  try {83    const { user_id } = req.query;84    const pool = await getPool();85 86    const result = await pool.request()87      .input("user_id", sql.UniqueIdentifier, user_id)88      .query(`89        SELECT90          user_id,91          display_name,92          username,93          account_type,94          wool_points,95          tree_points96        FROM dbo.profiles97        WHERE user_id = @user_id98      `);99 100    res.json(result.recordset[0] || null);101  } catch (err) {102    console.error("profile fetch error:", err);103    res.status(500).json({ error: "profile fetch failed" });104  }105});106 107// =====================================================108// PLEDGES / POINTS109// =====================================================110app.post("/pledges", async (req, res) => {111  try {112    const { user_id, points } = req.body;113 114    if (!user_id || typeof points !== "number") {115      return res.status(400).json({ error: "user_id and points required" });116    }117 118    const pool = await getPool();119 120    await pool.request()121      .input("user_id", sql.UniqueIdentifier, user_id)122      .input("points", sql.Int, points)123      .query(`124        UPDATE dbo.profiles125        SET wool_points = ISNULL(wool_points, 0) + @points126        WHERE user_id = @user_id127      `);128 129    res.json({ success: true });130  } catch (err) {131    console.error("pledges error:", err);132    res.status(500).json({ error: "pledges failed" });133  }134});135 136// =====================================================137// SERVER138// =====================================================139const PORT = process.env.PORT || 3000;140app.listen(PORT, () => {141  console.log(`API running on port ${PORT}`);142});
+const express = require("express");
+const cors = require("cors");
+const sql = require("mssql");
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+// =====================================================
+// SQL CONFIG (AZURE SQL)
+// =====================================================
+const sqlConfig = {
+  user: process.env.SQL_USER,
+  password: process.env.SQL_PASSWORD,
+  database: process.env.SQL_DATABASE,
+  server: process.env.SQL_SERVER,
+  options: {
+    encrypt: true,
+    trustServerCertificate: false,
+  },
+};
+
+let pool;
+async function getPool() {
+  if (!pool) {
+    pool = await sql.connect(sqlConfig);
+  }
+  return pool;
+}
+
+// =====================================================
+// CREATE USER
+// =====================================================
+app.post("/create-user", async (req, res) => {
+  try {
+    const user_id = req.body.user_id;
+    const display_name =
+      typeof req.body.display_name === "string"
+        ? req.body.display_name
+        : null;
+
+    if (!user_id) {
+      return res.status(400).json({ error: "user_id required" });
+    }
+
+    const pool = await getPool();
+
+    await pool.request()
+      .input("user_id", sql.UniqueIdentifier, user_id)
+      .input("display_name", sql.NVarChar(255), display_name)
+      .query(`
+        IF NOT EXISTS (
+          SELECT 1 FROM dbo.profiles WHERE user_id = @user_id
+        )
+        BEGIN
+          INSERT INTO dbo.profiles (
+            user_id,
+            display_name,
+            wool_points,
+            tree_points
+          )
+          VALUES (
+            @user_id,
+            @display_name,
+            0,
+            0
+          )
+        END
+      `);
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("create-user error:", err);
+    res.status(500).json({ error: "create-user failed" });
+  }
+});
+
+// =====================================================
+// PROFILE
+// =====================================================
+app.get("/profile", async (req, res) => {
+  try {
+    const { user_id } = req.query;
+    const pool = await getPool();
+
+    const result = await pool.request()
+      .input("user_id", sql.UniqueIdentifier, user_id)
+      .query(`
+        SELECT
+          user_id,
+          display_name,
+          username,
+          account_type,
+          wool_points,
+          tree_points
+        FROM dbo.profiles
+        WHERE user_id = @user_id
+      `);
+
+    res.json(result.recordset[0] || null);
+  } catch (err) {
+    console.error("profile fetch error:", err);
+    res.status(500).json({ error: "profile fetch failed" });
+  }
+});
+
+// =====================================================
+// PLEDGES / POINTS
+// =====================================================
+app.post("/pledges", async (req, res) => {
+  try {
+    const { user_id, points } = req.body;
+
+    if (!user_id || typeof points !== "number") {
+      return res.status(400).json({ error: "user_id and points required" });
+    }
+
+    const pool = await getPool();
+
+    await pool.request()
+      .input("user_id", sql.UniqueIdentifier, user_id)
+      .input("points", sql.Int, points)
+      .query(`
+        UPDATE dbo.profiles
+        SET wool_points = ISNULL(wool_points, 0) + @points
+        WHERE user_id = @user_id
+      `);
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("pledges error:", err);
+    res.status(500).json({ error: "pledges failed" });
+  }
+});
+
+// =====================================================
+// SERVER
+// =====================================================
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`API running on port ${PORT}`);
+});
