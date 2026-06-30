@@ -170,7 +170,16 @@ app.get("/kudos", async (req, res) => {
     res.status(500).json({ error: "kudos fetch failed" });
   }
 });
-``
+// ==============================
+// RESPONSES (TEMP FIX)
+// ==============================
+app.get("/responses", async (req, res) => {
+  try {
+    res.json([]); // return empty for now
+  } catch (err) {
+    res.status(500).json({ error: "responses failed" });
+  }
+});
 // ==============================
 // SERVER
 // ==============================
