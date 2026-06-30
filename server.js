@@ -1476,6 +1476,86 @@ app.post("/business-stamps", async (req, res) => {
   }
 });
 // ==============================
+// USER PLEDGES - GET
+// ==============================
+app.get("/pledges", async (req, res) => {
+  try {
+    const { user_id } = req.query;
+
+    const pool = await getPool();
+
+    const result = await pool.request()
+      .input("user_id", sql.UniqueIdentifier, user_id)
+      .query(`
+        SELECT *
+        FROM dbo.user_pledges
+        WHERE user_id = @user_id
+        ORDER BY completed_at DESC
+      `);
+
+    res.json(result.recordset);
+
+  } catch (err) {
+    console.error("pledges get error:", err);
+    res.status(500).json({ error: "pledges fetch failed" });
+  }
+});
+
+// ==============================
+// COMPLETE PLEDGE
+// ==============================
+app.post("/pledges", async (req, res) => {
+  try {
+    const {
+      user_id,
+      category,
+      action,
+      points_earned
+    } = req.body;
+
+    const pool = await getPool();
+
+    await pool.request()
+      .input("user_id", sql.UniqueIdentifier, user_id)
+      .input("category", sql.NVarChar(255), category || "")
+      .input("action", sql.NVarChar(sql.MAX), action || "")
+      .input("points_earned", sql.Int, points_earned || 0)
+      .query(`
+        INSERT INTO dbo.user_pledges (
+          id,
+          user_id,
+          category,
+          action,
+          points_earned,
+          completed_at
+        )
+        VALUES (
+          NEWID(),
+          @user_id,
+          @category,
+          @action,
+          @points_earned,
+          GETDATE()
+        )
+      `);
+
+    await pool.request()
+      .input("user_id", sql.NVarChar, user_id)
+      .input("points_earned", sql.Int, points_earned || 0)
+      .query(`
+        UPDATE dbo.profiles
+        SET wool_points = ISNULL(wool_points,0) + @points_earned
+        WHERE user_id = @user_id
+      `);
+
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error("pledges create error:", err);
+    res.status(500).json({ error: "pledges create failed" });
+  }
+});
+// ==============================
 // SERVER
 // ==============================
 const PORT = process.env.PORT || 10000;
