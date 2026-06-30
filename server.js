@@ -231,25 +231,25 @@ app.post("/responses/save", async (req, res) => {
               impact_value = @impact_value,
               updated_at = GETDATE()
 
-          WHEN NOT MATCHED THEN
-            INSERT (
-              user_id,
-              category,
-              question_id,
-              answer_value,
-              impact_value,
-              created_at,
-              updated_at
-            )
-            VALUES (
-              @user_id,
-              @category,
-              @question_id,
-              @answer_value,
-              @impact_value,
-              GETDATE(),
-              GETDATE()
-            );
+         WHEN NOT MATCHED THEN
+  INSERT (
+    user_id,
+    category,
+    question_id,
+    answer_value,
+    impact_value,
+    created_at,
+    updated_at
+  )
+  VALUES (
+    @user_id,
+    @category,
+    @question_id,
+    @answer_value,
+    @impact_value,
+    GETDATE(),
+    GETDATE()
+  );
         `);
     }
 
