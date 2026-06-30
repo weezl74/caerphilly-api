@@ -1686,19 +1686,21 @@ app.post("/sprints/save", async (req, res) => {
             data = @data,
             updated_at = SYSUTCDATETIME()
 
-        WHEN NOT MATCHED THEN
-          INSERT (
-            user_id,
-            sprint_key,
-            data,
-            updated_at
-          )
-          VALUES (
-            @user_id,
-            @sprint_key,
-            @data,
-            SYSUTCDATETIME()
-          );
+      WHEN NOT MATCHED THEN
+  INSERT (
+    id,
+    user_id,
+    sprint_key,
+    data,
+    updated_at
+  )
+  VALUES (
+    NEWID(),
+    @user_id,
+    @sprint_key,
+    @data,
+    SYSUTCDATETIME()
+  );
       `);
 
     res.json({ ok: true });
