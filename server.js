@@ -669,6 +669,257 @@ app.post("/walk-stamps", async (req, res) => {
   }
 });
 // ==============================
+// MAP LOCATIONS
+// ==============================
+app.get("/map-locations", async (req, res) => {
+  try {
+    const pool = await getPool();
+
+    const result = await pool.request().query(`
+      SELECT *
+      FROM dbo.map_locations
+      ORDER BY title
+    `);
+
+    res.json(result.recordset);
+
+  } catch (err) {
+    console.error("map-locations error:", err);
+    res.status(500).json({ error: "map locations failed" });
+  }
+});
+
+// ==============================
+// BUSINESS CARDS PUBLIC
+// ==============================
+app.get("/business-cards/public", async (req, res) => {
+  try {
+    const pool = await getPool();
+
+    const result = await pool.request().query(`
+      SELECT *
+      FROM dbo.business_cards
+      WHERE status = 'approved'
+      ORDER BY business_name
+    `);
+
+    res.json(result.recordset);
+
+  } catch (err) {
+    console.error("business-cards/public error:", err);
+    res.status(500).json({ error: "business cards failed" });
+  }
+});
+
+// ==============================
+// LEGACY PUBLIC ROUTE
+// (temporary compatibility route)
+// ==============================
+app.get("/public", async (req, res) => {
+  try {
+    const pool = await getPool();
+
+    const result = await pool.request().query(`
+      SELECT *
+      FROM dbo.business_cards
+      WHERE status = 'approved'
+      ORDER BY business_name
+    `);
+
+    res.json(result.recordset);
+
+  } catch (err) {
+    console.error("public route error:", err);
+    res.status(500).json({ error: "public route failed" });
+  }
+});
+
+// ==============================
+// TRANSLATIONS
+// ==============================
+app.get("/translations", async (req, res) => {
+  try {
+    const lang = req.query.lang || "cy";
+
+    const pool = await getPool();
+
+    const result = await pool.request()
+      .input("lang", sql.NVarChar(10), lang)
+      .query(`
+        SELECT
+          english_version,
+          translation,
+          language_code
+        FROM dbo.translations
+        WHERE language_code = @lang
+      `);
+
+    res.json(result.recordset);
+
+  } catch (err) {
+    console.error("translations error:", err);
+    res.status(500).json({ error: "translations failed" });
+  }
+});
+
+// ==============================
+// PLEDGES CATALOGUE
+// ==============================
+app.get("/pledges-catalogue", async (req, res) => {
+  try {
+    const pool = await getPool();
+
+    const result = await pool.request().query(`
+      SELECT *
+      FROM dbo.pledges
+      ORDER BY title
+    `);
+
+    res.json(result.recordset);
+
+  } catch (err) {
+    console.error("pledges catalogue error:", err);
+    res.status(500).json({ error: "pledges catalogue failed" });
+  }
+});
+
+// ==============================
+// BUSINESS CARD (MY BUSINESS)
+// ==============================
+app.get("/business-cards/me", async (req, res) => {
+  try {
+    const { user_id } = req.query;
+
+    const pool = await getPool();
+
+    const result = await pool.request()
+      .input("user_id", sql.UniqueIdentifier, user_id)
+      .query(`
+        SELECT TOP 1 *
+        FROM dbo.business_cards
+        WHERE user_id = @user_id
+      `);
+
+    res.json(result.recordset[0] || null);
+
+  } catch (err) {
+    console.error("business-cards/me error:", err);
+    res.status(500).json({ error: "business card lookup failed" });
+  }
+});
+
+// ==============================
+// BUSINESS CARD UPSERT
+// ==============================
+app.post("/business-cards", async (req, res) => {
+  try {
+    const {
+      user_id,
+      business_name,
+      tagline,
+      sector,
+      website,
+      logo_url,
+      pen_portrait,
+      climate_goals,
+      offer_to_residents,
+      offer_to_businesses,
+      sector_icon,
+      stamps_required,
+      reward_text
+    } = req.body;
+
+    const pool = await getPool();
+
+    await pool.request()
+      .input("user_id", sql.UniqueIdentifier, user_id)
+      .input("business_name", sql.NVarChar(sql.MAX), business_name || "")
+      .input("tagline", sql.NVarChar(sql.MAX), tagline || "")
+      .input("sector", sql.NVarChar(sql.MAX), sector || "")
+      .input("website", sql.NVarChar(sql.MAX), website || "")
+      .input("logo_url", sql.NVarChar(sql.MAX), logo_url || "")
+      .input("pen_portrait", sql.NVarChar(sql.MAX), pen_portrait || "")
+      .input("climate_goals", sql.NVarChar(sql.MAX), climate_goals || "")
+      .input("offer_to_residents", sql.NVarChar(sql.MAX), offer_to_residents || "")
+      .input("offer_to_businesses", sql.NVarChar(sql.MAX), offer_to_businesses || "")
+      .input("sector_icon", sql.NVarChar(100), sector_icon || "")
+      .input("stamps_required", sql.Int, stamps_required || 6)
+      .input("reward_text", sql.NVarChar(sql.MAX), reward_text || "")
+      .query(`
+        IF EXISTS (
+          SELECT 1
+          FROM dbo.business_cards
+          WHERE user_id = @user_id
+        )
+        BEGIN
+          UPDATE dbo.business_cards
+          SET
+            business_name = @business_name,
+            tagline = @tagline,
+            sector = @sector,
+            website = @website,
+            logo_url = @logo_url,
+            pen_portrait = @pen_portrait,
+            climate_goals = @climate_goals,
+            offer_to_residents = @offer_to_residents,
+            offer_to_businesses = @offer_to_businesses,
+            sector_icon = @sector_icon,
+            stamps_required = @stamps_required,
+            reward_text = @reward_text,
+            updated_at = GETDATE()
+          WHERE user_id = @user_id
+        END
+        ELSE
+        BEGIN
+          INSERT INTO dbo.business_cards (
+            id,
+            user_id,
+            business_name,
+            tagline,
+            sector,
+            website,
+            logo_url,
+            pen_portrait,
+            climate_goals,
+            offer_to_residents,
+            offer_to_businesses,
+            sector_icon,
+            stamps_required,
+            reward_text,
+            status,
+            created_at,
+            updated_at
+          )
+          VALUES (
+            NEWID(),
+            @user_id,
+            @business_name,
+            @tagline,
+            @sector,
+            @website,
+            @logo_url,
+            @pen_portrait,
+            @climate_goals,
+            @offer_to_residents,
+            @offer_to_businesses,
+            @sector_icon,
+            @stamps_required,
+            @reward_text,
+            'pending',
+            GETDATE(),
+            GETDATE()
+          )
+        END
+      `);
+
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error("business-cards save error:", err);
+    res.status(500).json({ error: "business card save failed" });
+  }
+});
+// ==============================
 // SERVER
 // ==============================
 const PORT = process.env.PORT || 10000;
