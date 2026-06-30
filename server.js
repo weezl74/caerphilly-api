@@ -351,6 +351,368 @@ app.post("/profile/update", async (req, res) => {
   }
 });
 // ==============================
+// WALLET - GET
+// ==============================
+app.get("/wallet", async (req, res) => {
+  try {
+    const { user_id } = req.query;
+
+    const pool = await getPool();
+
+    const result = await pool.request()
+      .input("user_id", sql.UniqueIdentifier, user_id)
+      .query(`
+        SELECT business_id, data
+        FROM dbo.user_wallet
+        WHERE user_id = @user_id
+        ORDER BY created_at DESC
+      `);
+
+    res.json(result.recordset);
+
+  } catch (err) {
+    console.error("wallet get error:", err);
+    res.status(500).json({ error: "wallet fetch failed" });
+  }
+});
+
+// ==============================
+// WALLET - POST (UPSERT)
+// ==============================
+app.post("/wallet", async (req, res) => {
+  try {
+    const { user_id, business_id, data } = req.body;
+
+    const pool = await getPool();
+
+    await pool.request()
+      .input("user_id", sql.UniqueIdentifier, user_id)
+      .input("business_id", sql.NVarChar(255), business_id)
+      .input("data", sql.NVarChar(sql.MAX), JSON.stringify(data))
+      .query(`
+        MERGE dbo.user_wallet AS target
+        USING (
+          SELECT
+            @user_id AS user_id,
+            @business_id AS business_id
+        ) AS source
+        ON target.user_id = source.user_id
+        AND target.business_id = source.business_id
+
+        WHEN MATCHED THEN
+          UPDATE SET
+            data = @data,
+            updated_at = GETDATE()
+
+        WHEN NOT MATCHED THEN
+          INSERT (
+            id,
+            user_id,
+            business_id,
+            data,
+            created_at,
+            updated_at
+          )
+          VALUES (
+            NEWID(),
+            @user_id,
+            @business_id,
+            @data,
+            GETDATE(),
+            GETDATE()
+          );
+      `);
+
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error("wallet save error:", err);
+    res.status(500).json({ error: "wallet save failed" });
+  }
+});
+
+// ==============================
+// WALLET - DELETE
+// ==============================
+app.delete("/wallet", async (req, res) => {
+  try {
+    const { user_id, business_id } = req.body;
+
+    const pool = await getPool();
+
+    await pool.request()
+      .input("user_id", sql.UniqueIdentifier, user_id)
+      .input("business_id", sql.NVarChar(255), business_id)
+      .query(`
+        DELETE FROM dbo.user_wallet
+        WHERE user_id = @user_id
+        AND business_id = @business_id
+      `);
+
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error("wallet delete error:", err);
+    res.status(500).json({ error: "wallet delete failed" });
+  }
+});
+
+// ==============================
+// PREFERENCES - GET
+// ==============================
+app.get("/preferences", async (req, res) => {
+  try {
+    const { user_id } = req.query;
+
+    const pool = await getPool();
+
+    const result = await pool.request()
+      .input("user_id", sql.UniqueIdentifier, user_id)
+      .query(`
+        SELECT *
+        FROM dbo.user_preferences
+        WHERE user_id = @user_id
+      `);
+
+    const row = result.recordset[0];
+
+    if (!row) {
+      return res.json(null);
+    }
+
+    res.json({
+      sheep_head: row.sheep_head,
+      learning_preferences: row.learning_preferences
+        ? JSON.parse(row.learning_preferences)
+        : null
+    });
+
+  } catch (err) {
+    console.error("preferences get error:", err);
+    res.status(500).json({ error: "preferences fetch failed" });
+  }
+});
+
+// ==============================
+// PREFERENCES - POST UPSERT
+// ==============================
+app.post("/preferences", async (req, res) => {
+  try {
+    const {
+      user_id,
+      sheep_head,
+      learning_preferences
+    } = req.body;
+
+    const pool = await getPool();
+
+    await pool.request()
+      .input("user_id", sql.UniqueIdentifier, user_id)
+      .input("sheep_head", sql.NVarChar(50), sheep_head)
+      .input(
+        "learning_preferences",
+        sql.NVarChar(sql.MAX),
+        JSON.stringify(learning_preferences || {})
+      )
+      .query(`
+        MERGE dbo.user_preferences AS target
+        USING (
+          SELECT @user_id AS user_id
+        ) AS source
+        ON target.user_id = source.user_id
+
+        WHEN MATCHED THEN
+          UPDATE SET
+            sheep_head = @sheep_head,
+            learning_preferences = @learning_preferences,
+            updated_at = GETDATE()
+
+        WHEN NOT MATCHED THEN
+          INSERT (
+            user_id,
+            sheep_head,
+            learning_preferences,
+            created_at,
+            updated_at
+          )
+          VALUES (
+            @user_id,
+            @sheep_head,
+            @learning_preferences,
+            GETDATE(),
+            GETDATE()
+          );
+      `);
+
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error("preferences save error:", err);
+    res.status(500).json({ error: "preferences save failed" });
+  }
+});
+
+// ==============================
+// BIN DAY - GET
+// ==============================
+app.get("/bin-day", async (req, res) => {
+  try {
+    const { user_id } = req.query;
+
+    const pool = await getPool();
+
+    const result = await pool.request()
+      .input("user_id", sql.UniqueIdentifier, user_id)
+      .query(`
+        SELECT *
+        FROM dbo.user_bin_day
+        WHERE user_id = @user_id
+      `);
+
+    const row = result.recordset[0];
+
+    if (!row) {
+      return res.json(null);
+    }
+
+    res.json({
+      data: row.data ? JSON.parse(row.data) : {},
+      dismissed: row.dismissed
+    });
+
+  } catch (err) {
+    console.error("bin day get error:", err);
+    res.status(500).json({ error: "bin day fetch failed" });
+  }
+});
+
+// ==============================
+// BIN DAY - POST UPSERT
+// ==============================
+app.post("/bin-day", async (req, res) => {
+  try {
+    const {
+      user_id,
+      data,
+      dismissed
+    } = req.body;
+
+    const pool = await getPool();
+
+    await pool.request()
+      .input("user_id", sql.UniqueIdentifier, user_id)
+      .input("data", sql.NVarChar(sql.MAX), JSON.stringify(data || {}))
+      .input("dismissed", sql.Bit, dismissed || false)
+      .query(`
+        MERGE dbo.user_bin_day AS target
+        USING (
+          SELECT @user_id AS user_id
+        ) AS source
+        ON target.user_id = source.user_id
+
+        WHEN MATCHED THEN
+          UPDATE SET
+            data = @data,
+            dismissed = @dismissed,
+            updated_at = GETDATE()
+
+        WHEN NOT MATCHED THEN
+          INSERT (
+            user_id,
+            data,
+            dismissed,
+            created_at,
+            updated_at
+          )
+          VALUES (
+            @user_id,
+            @data,
+            @dismissed,
+            GETDATE(),
+            GETDATE()
+          );
+      `);
+
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error("bin day save error:", err);
+    res.status(500).json({ error: "bin day save failed" });
+  }
+});
+
+// ==============================
+// WALK STAMPS - GET
+// ==============================
+app.get("/walk-stamps", async (req, res) => {
+  try {
+    const { user_id } = req.query;
+
+    const pool = await getPool();
+
+    const result = await pool.request()
+      .input("user_id", sql.UniqueIdentifier, user_id)
+      .query(`
+        SELECT *
+        FROM dbo.user_walk_stamps
+        WHERE user_id = @user_id
+      `);
+
+    res.json(result.recordset[0] || null);
+
+  } catch (err) {
+    console.error("walk stamps get error:", err);
+    res.status(500).json({ error: "walk stamps fetch failed" });
+  }
+});
+
+// ==============================
+// WALK STAMPS - POST UPSERT
+// ==============================
+app.post("/walk-stamps", async (req, res) => {
+  try {
+    const { user_id, stamps } = req.body;
+
+    const pool = await getPool();
+
+    await pool.request()
+      .input("user_id", sql.UniqueIdentifier, user_id)
+      .input("stamps", sql.NVarChar(100), String(stamps))
+      .query(`
+        MERGE dbo.user_walk_stamps AS target
+        USING (
+          SELECT @user_id AS user_id
+        ) AS source
+        ON target.user_id = source.user_id
+
+        WHEN MATCHED THEN
+          UPDATE SET
+            stamps = @stamps,
+            updated_at = GETDATE()
+
+        WHEN NOT MATCHED THEN
+          INSERT (
+            user_id,
+            stamps,
+            created_at,
+            updated_at
+          )
+          VALUES (
+            @user_id,
+            @stamps,
+            GETDATE(),
+            GETDATE()
+          );
+      `);
+
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error("walk stamps save error:", err);
+    res.status(500).json({ error: "walk stamps save failed" });
+  }
+});
+// ==============================
 // SERVER
 // ==============================
 const PORT = process.env.PORT || 10000;
