@@ -1687,27 +1687,31 @@ app.post("/sprints/save", async (req, res) => {
             updated_at = SYSUTCDATETIME()
 
 WHEN NOT MATCHED THEN
-DECLARE @NextId INT;
+BEGIN
 
-SELECT @NextId = ISNULL(MAX(id), 0) + 1
-FROM dbo.user_sprints;
+  DECLARE @NextId INT;
 
-INSERT (
-  id,
-  user_id,
-  sprint_key,
-  data,
-  created_at,
-  updated_at
-)
-VALUES (
-  @NextId,
-  @user_id,
-  @sprint_key,
-  @data,
-  SYSUTCDATETIME(),
-  SYSUTCDATETIME()
-)
+  SELECT @NextId = ISNULL(MAX(id), 0) + 1
+  FROM dbo.user_sprints;
+
+  INSERT (
+    id,
+    user_id,
+    sprint_key,
+    data,
+    created_at,
+    updated_at
+  )
+  VALUES (
+    @NextId,
+    @user_id,
+    @sprint_key,
+    @data,
+    SYSUTCDATETIME(),
+    SYSUTCDATETIME()
+  );
+
+END
 
       `);
 
