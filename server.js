@@ -318,13 +318,20 @@ app.get("/wallet", async (req, res) => {
     const result = await pool.request()
       .input("user_id", sql.UniqueIdentifier, user_id)
       .query(`
-        SELECT business_id, data
+        SELECT
+          business_id,
+          data
         FROM dbo.user_wallet
         WHERE user_id = @user_id
         ORDER BY created_at DESC
       `);
 
-    res.json(result.recordset);
+    const rows = result.recordset.map(row => ({
+      business_id: row.business_id,
+      data: row.data ? JSON.parse(row.data) : null
+    }));
+
+    res.json(rows);
 
   } catch (err) {
     console.error("wallet get error:", err);
@@ -412,7 +419,6 @@ app.delete("/wallet", async (req, res) => {
     res.status(500).json({ error: "wallet delete failed" });
   }
 });
-
 // ==============================
 // PREFERENCES - GET
 // ==============================
