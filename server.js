@@ -926,6 +926,217 @@ app.post("/business-cards", async (req, res) => {
   }
 });
 // ==============================
+// GET USER GROUP
+// ==============================
+app.get("/users/:user_id/group", async (req, res) => {
+  try {
+    const { user_id } = req.params;
+
+    const pool = await getPool();
+
+    const result = await pool.request()
+      .input("user_id", sql.UniqueIdentifier, user_id)
+      .query(`
+        SELECT TOP 1
+          g.id,
+          g.name,
+          g.code,
+          g.created_by
+        FROM dbo.group_members gm
+        INNER JOIN dbo.groups g
+          ON gm.group_id = g.id
+        WHERE gm.user_id = @user_id
+      `);
+
+    res.json(result.recordset[0] || null);
+
+  } catch (err) {
+    console.error("user group error:", err);
+    res.status(500).json({ error: "group lookup failed" });
+  }
+});
+
+// ==============================
+// GET GROUP BY ID
+// ==============================
+app.get("/groups/:id", async (req, res) => {
+  try {
+    const pool = await getPool();
+
+    const result = await pool.request()
+      .input("id", sql.Int, req.params.id)
+      .query(`
+        SELECT *
+        FROM dbo.groups
+        WHERE id = @id
+      `);
+
+    res.json(result.recordset[0] || null);
+
+  } catch (err) {
+    console.error("group lookup error:", err);
+    res.status(500).json({ error: "group lookup failed" });
+  }
+});
+
+// ==============================
+// GET GROUP BY CODE
+// ==============================
+app.get("/groups/by-code/:code", async (req, res) => {
+  try {
+    const pool = await getPool();
+
+    const result = await pool.request()
+      .input("code", sql.NVarChar(50), req.params.code)
+      .query(`
+        SELECT *
+        FROM dbo.groups
+        WHERE code = @code
+      `);
+
+    res.json(result.recordset[0] || null);
+
+  } catch (err) {
+    console.error("group code error:", err);
+    res.status(500).json({ error: "group lookup failed" });
+  }
+});
+
+// ==============================
+// CREATE GROUP
+// ==============================
+app.post("/groups", async (req, res) => {
+  try {
+    const {
+      name,
+      code,
+      created_by
+    } = req.body;
+
+    const pool = await getPool();
+
+    const result = await pool.request()
+      .input("name", sql.NVarChar(255), name)
+      .input("code", sql.NVarChar(50), code)
+      .input("created_by", sql.UniqueIdentifier, created_by)
+      .query(`
+        INSERT INTO dbo.groups (
+          name,
+          code,
+          created_by,
+          created_at,
+          updated_at
+        )
+        OUTPUT INSERTED.*
+        VALUES (
+          @name,
+          @code,
+          @created_by,
+          GETDATE(),
+          GETDATE()
+        )
+      `);
+
+    res.json(result.recordset[0]);
+
+  } catch (err) {
+    console.error("group create error:", err);
+    res.status(500).json({ error: "group create failed" });
+  }
+});
+
+// ==============================
+// GET GROUP MEMBERS
+// ==============================
+app.get("/groups/:id/members", async (req, res) => {
+  try {
+    const pool = await getPool();
+
+    const result = await pool.request()
+      .input("group_id", sql.Int, req.params.id)
+      .query(`
+        SELECT
+          gm.user_id,
+          COALESCE(p.display_name,'Member') AS display_name,
+          ISNULL(p.wool_points,0) + ISNULL(p.tree_points,0) AS total_points
+        FROM dbo.group_members gm
+        LEFT JOIN dbo.profiles p
+          ON TRY_CONVERT(uniqueidentifier, p.user_id) = gm.user_id
+        WHERE gm.group_id = @group_id
+        ORDER BY total_points DESC
+      `);
+
+    res.json(result.recordset);
+
+  } catch (err) {
+    console.error("group members error:", err);
+    res.status(500).json({ error: "group members failed" });
+  }
+});
+
+// ==============================
+// JOIN GROUP
+// ==============================
+app.post("/groups/:id/members", async (req, res) => {
+  try {
+    const { user_id } = req.body;
+
+    const pool = await getPool();
+
+    await pool.request()
+      .input("group_id", sql.Int, req.params.id)
+      .input("user_id", sql.UniqueIdentifier, user_id)
+      .query(`
+        IF NOT EXISTS (
+          SELECT 1
+          FROM dbo.group_members
+          WHERE group_id = @group_id
+          AND user_id = @user_id
+        )
+        INSERT INTO dbo.group_members (
+          group_id,
+          user_id,
+          joined_at
+        )
+        VALUES (
+          @group_id,
+          @user_id,
+          GETDATE()
+        )
+      `);
+
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error("join group error:", err);
+    res.status(500).json({ error: "group join failed" });
+  }
+});
+
+// ==============================
+// LEAVE GROUP
+// ==============================
+app.delete("/groups/:id/members/:user_id", async (req, res) => {
+  try {
+    const pool = await getPool();
+
+    await pool.request()
+      .input("group_id", sql.Int, req.params.id)
+      .input("user_id", sql.UniqueIdentifier, req.params.user_id)
+      .query(`
+        DELETE FROM dbo.group_members
+        WHERE group_id = @group_id
+        AND user_id = @user_id
+      `);
+
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error("leave group error:", err);
+    res.status(500).json({ error: "group leave failed" });
+  }
+});
+// ==============================
 // SERVER
 // ==============================
 const PORT = process.env.PORT || 10000;
