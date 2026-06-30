@@ -1556,6 +1556,61 @@ app.post("/pledges", async (req, res) => {
   }
 });
 // ==============================
+// CREATE STORY
+// ==============================
+app.post("/stories", async (req, res) => {
+  try {
+    const {
+      user_id,
+      title,
+      content,
+      image_url,
+      run_type,
+      points_earned
+    } = req.body;
+
+    const pool = await getPool();
+
+    await pool.request()
+      .input("user_id", sql.UniqueIdentifier, user_id)
+      .input("title", sql.NVarChar(sql.MAX), title || "")
+      .input("content", sql.NVarChar(sql.MAX), content || "")
+      .input("image_url", sql.NVarChar(sql.MAX), image_url || "")
+      .input("run_type", sql.NVarChar(100), run_type || "")
+      .input("points_earned", sql.Int, points_earned || 0)
+      .query(`
+        INSERT INTO dbo.user_stories (
+          id,
+          user_id,
+          title,
+          content,
+          image_url,
+          run_type,
+          points_earned,
+          created_at,
+          updated_at
+        )
+        VALUES (
+          NEWID(),
+          @user_id,
+          @title,
+          @content,
+          @image_url,
+          @run_type,
+          @points_earned,
+          GETDATE(),
+          GETDATE()
+        )
+      `);
+
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error("story create error:", err);
+    res.status(500).json({ error: "story create failed" });
+  }
+});
+// ==============================
 // SERVER
 // ==============================
 const PORT = process.env.PORT || 10000;
