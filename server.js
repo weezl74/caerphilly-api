@@ -1726,6 +1726,51 @@ app.post("/sprints/save", async (req, res) => {
   }
 });
 // ==============================
+// ADD KUDOS TO STORY
+// ==============================
+app.post("/stories/:id/kudos", async (req, res) => {
+  try {
+    const { user_id } = req.body;
+    const { id: story_id } = req.params;
+
+    const pool = await getPool();
+
+    await pool.request()
+      .input("story_id", sql.UniqueIdentifier, story_id)
+      .input("user_id", sql.UniqueIdentifier, user_id)
+      .query(`
+        IF NOT EXISTS (
+          SELECT 1
+          FROM dbo.story_kudos
+          WHERE story_id = @story_id
+          AND user_id = @user_id
+        )
+        BEGIN
+          INSERT INTO dbo.story_kudos (
+            id,
+            story_id,
+            user_id,
+            created_at
+          )
+          VALUES (
+            NEWID(),
+            @story_id,
+            @user_id,
+            GETDATE()
+          )
+        END
+      `);
+
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error("kudos save error:", err);
+    res.status(500).json({
+      error: "kudos save failed"
+    });
+  }
+});
+// ==============================
 // SERVER
 // ==============================
 const PORT = process.env.PORT || 10000;
