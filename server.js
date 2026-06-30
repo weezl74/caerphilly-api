@@ -306,6 +306,51 @@ app.post("/profile/update", async (req, res) => {
   }
 });
 // ==============================
+// PROFILE UPDATE
+// ==============================
+app.post("/profile/update", async (req, res) => {
+  try {
+    const { user_id } = req.body;
+
+    if (!user_id) {
+      return res.status(400).json({ error: "user_id required" });
+    }
+
+    const pool = await getPool();
+
+    const result = await pool.request()
+      .input("user_id", sql.NVarChar, user_id)
+      .query(`
+        SELECT ISNULL(SUM(impact_value), 0) AS total_impact
+        FROM dbo.user_responses
+        WHERE user_id = @user_id
+      `);
+
+    const totalImpact =
+      result.recordset[0]?.total_impact || 0;
+
+    await pool.request()
+      .input("user_id", sql.NVarChar, user_id)
+      .input("points", sql.Int, totalImpact)
+      .query(`
+        UPDATE dbo.profiles
+        SET wool_points = @points
+        WHERE user_id = @user_id
+      `);
+
+    res.json({
+      success: true,
+      totalImpact
+    });
+
+  } catch (err) {
+    console.error("profile update error:", err);
+    res.status(500).json({
+      error: "profile update failed"
+    });
+  }
+});
+// ==============================
 // SERVER
 // ==============================
 const PORT = process.env.PORT || 10000;
