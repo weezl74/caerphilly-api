@@ -1167,6 +1167,313 @@ app.delete("/groups/:id/members/:user_id", async (req, res) => {
   }
 });
 // ==============================
+// TREE REQUESTS - GET
+// ==============================
+app.get("/tree-requests", async (req, res) => {
+  try {
+    const { user_id } = req.query;
+
+    const pool = await getPool();
+
+    const result = await pool.request()
+      .input("user_id", sql.UniqueIdentifier, user_id)
+      .query(`
+        SELECT *
+        FROM dbo.tree_requests
+        WHERE user_id = @user_id
+        ORDER BY created_at DESC
+      `);
+
+    res.json(result.recordset);
+
+  } catch (err) {
+    console.error("tree requests get error:", err);
+    res.status(500).json({ error: "tree requests fetch failed" });
+  }
+});
+
+// ==============================
+// TREE REQUESTS - CREATE
+// ==============================
+app.post("/tree-requests", async (req, res) => {
+  try {
+    const {
+      user_id,
+      points_used,
+      tree_species
+    } = req.body;
+
+    const pool = await getPool();
+
+    await pool.request()
+      .input("id", sql.UniqueIdentifier, sql.UniqueIdentifier ? undefined : null)
+      .input("user_id", sql.UniqueIdentifier, user_id)
+      .input("points_used", sql.Int, points_used || 500)
+      .input("tree_species", sql.NVarChar(255), tree_species || "")
+      .query(`
+        INSERT INTO dbo.tree_requests (
+          id,
+          user_id,
+          points_used,
+          status,
+          tree_species,
+          created_at,
+          updated_at
+        )
+        VALUES (
+          NEWID(),
+          @user_id,
+          @points_used,
+          'pending',
+          @tree_species,
+          GETDATE(),
+          GETDATE()
+        )
+      `);
+
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error("tree request create error:", err);
+    res.status(500).json({ error: "tree request create failed" });
+  }
+});
+
+// ==============================
+// TREE REQUESTS - UPDATE
+// ==============================
+app.patch("/tree-requests/:id", async (req, res) => {
+  try {
+    const {
+      status,
+      what3words_location,
+      planting_date
+    } = req.body;
+
+    const pool = await getPool();
+
+    await pool.request()
+      .input("id", sql.UniqueIdentifier, req.params.id)
+      .input("status", sql.NVarChar(50), status)
+      .input("what3words_location", sql.NVarChar(255), what3words_location)
+      .input("planting_date", sql.DateTime, planting_date || null)
+      .query(`
+        UPDATE dbo.tree_requests
+        SET
+          status = ISNULL(@status, status),
+          what3words_location = ISNULL(@what3words_location, what3words_location),
+          planting_date = ISNULL(@planting_date, planting_date),
+          updated_at = GETDATE()
+        WHERE id = @id
+      `);
+
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error("tree request update error:", err);
+    res.status(500).json({ error: "tree request update failed" });
+  }
+});
+
+// ==============================
+// RENEWABLES - GET
+// ==============================
+app.get("/renewables", async (req, res) => {
+  try {
+    const { user_id } = req.query;
+
+    const pool = await getPool();
+
+    const result = await pool.request()
+      .input("user_id", sql.UniqueIdentifier, user_id)
+      .query(`
+        SELECT *
+        FROM dbo.user_renewables
+        WHERE user_id = @user_id
+        ORDER BY purchased_at DESC
+      `);
+
+    const rows = result.recordset.map(row => ({
+      id: row.id,
+      user_id: row.user_id,
+      tech_type: row.technology_type,
+      lat: row.position_x,
+      lng: row.position_y,
+      points_cost: row.points_cost,
+      placed_at: row.purchased_at
+    }));
+
+    res.json(rows);
+
+  } catch (err) {
+    console.error("renewables get error:", err);
+    res.status(500).json({ error: "renewables fetch failed" });
+  }
+});
+
+// ==============================
+// RENEWABLES - CREATE
+// ==============================
+app.post("/renewables", async (req, res) => {
+  try {
+    const {
+      user_id,
+      tech_type,
+      lat,
+      lng,
+      cooling
+    } = req.body;
+
+    const pool = await getPool();
+
+    await pool.request()
+      .input("user_id", sql.UniqueIdentifier, user_id)
+      .input("technology_type", sql.NVarChar(100), tech_type)
+      .input("position_x", sql.Float, lat || 0)
+      .input("position_y", sql.Float, lng || 0)
+      .input("points_cost", sql.Int, Math.round((cooling || 0) * 100))
+      .query(`
+        INSERT INTO dbo.user_renewables (
+          id,
+          user_id,
+          technology_type,
+          points_cost,
+          position_x,
+          position_y,
+          purchased_at
+        )
+        VALUES (
+          NEWID(),
+          @user_id,
+          @technology_type,
+          @points_cost,
+          @position_x,
+          @position_y,
+          GETDATE()
+        )
+      `);
+
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error("renewables create error:", err);
+    res.status(500).json({ error: "renewables create failed" });
+  }
+});
+
+// ==============================
+// RENEWABLES - UPDATE
+// ==============================
+app.patch("/renewables/:id", async (req, res) => {
+  try {
+    const { position_x, position_y } = req.body;
+
+    const pool = await getPool();
+
+    await pool.request()
+      .input("id", sql.UniqueIdentifier, req.params.id)
+      .input("position_x", sql.Float, position_x)
+      .input("position_y", sql.Float, position_y)
+      .query(`
+        UPDATE dbo.user_renewables
+        SET
+          position_x = ISNULL(@position_x, position_x),
+          position_y = ISNULL(@position_y, position_y)
+        WHERE id = @id
+      `);
+
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error("renewables update error:", err);
+    res.status(500).json({ error: "renewables update failed" });
+  }
+});
+
+// ==============================
+// BUSINESS STAMPS - GET
+// ==============================
+app.get("/business-stamps", async (req, res) => {
+  try {
+    const { user_id } = req.query;
+
+    const pool = await getPool();
+
+    const result = await pool.request()
+      .input("user_id", sql.UniqueIdentifier, user_id)
+      .query(`
+        SELECT *
+        FROM dbo.user_business_stamps
+        WHERE user_id = @user_id
+      `);
+
+    res.json(result.recordset);
+
+  } catch (err) {
+    console.error("business stamps get error:", err);
+    res.status(500).json({ error: "business stamps fetch failed" });
+  }
+});
+
+// ==============================
+// BUSINESS STAMPS - UPSERT
+// ==============================
+app.post("/business-stamps", async (req, res) => {
+  try {
+    const {
+      user_id,
+      business_card_id,
+      stamps
+    } = req.body;
+
+    const pool = await getPool();
+
+    await pool.request()
+      .input("user_id", sql.UniqueIdentifier, user_id)
+      .input("business_card_id", sql.UniqueIdentifier, business_card_id)
+      .input("stamps", sql.Int, stamps)
+      .query(`
+        MERGE dbo.user_business_stamps AS target
+        USING (
+          SELECT
+            @user_id AS user_id,
+            @business_card_id AS business_card_id
+        ) AS source
+        ON target.user_id = source.user_id
+        AND target.business_card_id = source.business_card_id
+
+        WHEN MATCHED THEN
+          UPDATE SET
+            stamps = @stamps,
+            updated_at = GETDATE()
+
+        WHEN NOT MATCHED THEN
+          INSERT (
+            id,
+            user_id,
+            business_card_id,
+            stamps,
+            created_at,
+            updated_at
+          )
+          VALUES (
+            NEWID(),
+            @user_id,
+            @business_card_id,
+            @stamps,
+            GETDATE(),
+            GETDATE()
+          );
+      `);
+
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error("business stamps save error:", err);
+    res.status(500).json({ error: "business stamps save failed" });
+  }
+});
+// ==============================
 // SERVER
 // ==============================
 const PORT = process.env.PORT || 10000;
