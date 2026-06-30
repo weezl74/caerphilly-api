@@ -171,15 +171,96 @@ app.get("/kudos", async (req, res) => {
   }
 });
 // ==============================
-// RESPONSES (TEMP FIX)
+// RESPONSES
 // ==============================
 app.get("/responses", async (req, res) => {
   try {
-    res.json([]); // return empty for now
+    const { user_id } = req.query;
+
+    const pool = await getPool();
+
+    const result = await pool.request()
+      .input("user_id", sql.NVarChar, user_id)
+      .query(`
+        SELECT *
+        FROM dbo.user_responses
+        WHERE user_id = @user_id
+      `);
+
+    res.json(result.recordset);
+
   } catch (err) {
+    console.error("responses error:", err);
     res.status(500).json({ error: "responses failed" });
   }
 });
+
+// ==============================
+// SAVE RESPONSES
+// ==============================
+app.post("/save", async (req, res) => {
+  try {
+    const { user_id, responses } = req.body;
+
+    if (!user_id || !responses) {
+      return res.status(400).json({ error: "Missing data" });
+    }
+
+    const pool = await getPool();
+
+    for (const r of responses) {
+      await pool.request()
+        .input("user_id", sql.NVarChar, user_id)
+        .input("category", sql.NVarChar(50), r.category)
+        .input("question_id", sql.NVarChar(100), r.question_id)
+        .input("answer_value", sql.NVarChar(255), r.answer_value)
+        .input("impact_value", sql.Int, r.impact_value || 0)
+        .query(`
+          MERGE dbo.user_responses AS target
+          USING (
+            SELECT
+              @user_id AS user_id,
+              @question_id AS question_id
+          ) AS source
+          ON target.user_id = source.user_id
+          AND target.question_id = source.question_id
+
+          WHEN MATCHED THEN
+            UPDATE SET
+              answer_value = @answer_value,
+              impact_value = @impact_value,
+              updated_at = GETDATE()
+
+          WHEN NOT MATCHED THEN
+            INSERT (
+              user_id,
+              category,
+              question_id,
+              answer_value,
+              impact_value,
+              created_at,
+              updated_at
+            )
+            VALUES (
+              @user_id,
+              @category,
+              @question_id,
+              @answer_value,
+              @impact_value,
+              GETDATE(),
+              GETDATE()
+            );
+        `);
+    }
+
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error("save error:", err);
+    res.status(500).json({ error: "save failed" });
+  }
+});
+
 // ==============================
 // SERVER
 // ==============================
