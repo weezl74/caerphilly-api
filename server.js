@@ -231,8 +231,9 @@ app.post("/responses/save", async (req, res) => {
               impact_value = @impact_value,
               updated_at = GETDATE()
 
-         WHEN NOT MATCHED THEN
-  INSERT (
+      WHEN NOT MATCHED THEN
+INSERT (
+    id,
     user_id,
     category,
     question_id,
@@ -240,8 +241,9 @@ app.post("/responses/save", async (req, res) => {
     impact_value,
     created_at,
     updated_at
-  )
-  VALUES (
+)
+VALUES (
+    NEWID(),
     @user_id,
     @category,
     @question_id,
@@ -249,7 +251,7 @@ app.post("/responses/save", async (req, res) => {
     @impact_value,
     GETDATE(),
     GETDATE()
-  );
+);
         `);
     }
 
