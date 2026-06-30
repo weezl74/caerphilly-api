@@ -1686,12 +1686,13 @@ app.post("/sprints/save", async (req, res) => {
             data = @data,
             updated_at = SYSUTCDATETIME()
 
-      WHEN NOT MATCHED THEN
+WHEN NOT MATCHED THEN
   INSERT (
     id,
     user_id,
     sprint_key,
     data,
+    created_at,
     updated_at
   )
   VALUES (
@@ -1699,8 +1700,10 @@ app.post("/sprints/save", async (req, res) => {
     @user_id,
     @sprint_key,
     @data,
+    SYSUTCDATETIME(),
     SYSUTCDATETIME()
   );
+
       `);
 
     res.json({ ok: true });
