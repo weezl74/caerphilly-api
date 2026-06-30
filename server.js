@@ -998,9 +998,10 @@ app.get("/groups/by-code/:code", async (req, res) => {
 
   } catch (err) {
     console.error("group code error:", err);
-    res.status(500).json({ error: "group lookup failed" });
+    res.status(500).json({ error: "group code lookup failed" });
   }
 });
+
 // ==============================
 // CREATE GROUP
 // ==============================
@@ -1012,11 +1013,19 @@ app.post("/groups", async (req, res) => {
       created_by
     } = req.body;
 
+    const groupCode =
+      code ||
+      Math.random()
+        .toString(36)
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, "")
+        .substring(0, 6);
+
     const pool = await getPool();
 
     const result = await pool.request()
       .input("name", sql.NVarChar(255), name)
-      .input("code", sql.NVarChar(50), code)
+      .input("code", sql.NVarChar(50), groupCode)
       .input("created_by", sql.UniqueIdentifier, created_by)
       .query(`
         DECLARE @NextId INT;
@@ -1039,6 +1048,17 @@ app.post("/groups", async (req, res) => {
           @code,
           @created_by,
           GETDATE(),
+          GETDATE()
+        );
+
+        INSERT INTO dbo.group_members (
+          group_id,
+          user_id,
+          joined_at
+        )
+        VALUES (
+          @NextId,
+          @created_by,
           GETDATE()
         );
 
