@@ -198,7 +198,7 @@ app.get("/responses", async (req, res) => {
 // ==============================
 // SAVE RESPONSES
 // ==============================
-app.post("/save", async (req, res) => {
+app.post("/responses/save", async (req, res) => {
   try {
     const { user_id, responses } = req.body;
 
