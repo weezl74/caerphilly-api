@@ -1672,47 +1672,48 @@ app.post("/sprints/save", async (req, res) => {
       .input("sprint_key", sql.NVarChar(64), sprint_key)
       .input("data", sql.NVarChar(sql.MAX), data || "{}")
       .query(`
-        MERGE dbo.user_sprints AS target
-        USING (
-          SELECT
-            @user_id AS user_id,
-            @sprint_key AS sprint_key
-        ) AS source
-        ON target.user_id = source.user_id
-        AND target.sprint_key = source.sprint_key
+        IF EXISTS (
+          SELECT 1
+          FROM dbo.user_sprints
+          WHERE user_id = @user_id
+          AND sprint_key = @sprint_key
+        )
+        BEGIN
 
-        WHEN MATCHED THEN
-          UPDATE SET
+          UPDATE dbo.user_sprints
+          SET
             data = @data,
             updated_at = SYSUTCDATETIME()
+          WHERE user_id = @user_id
+          AND sprint_key = @sprint_key
 
-WHEN NOT MATCHED THEN
-BEGIN
+        END
+        ELSE
+        BEGIN
 
-  DECLARE @NextId INT;
+          DECLARE @NextId INT;
 
-  SELECT @NextId = ISNULL(MAX(id), 0) + 1
-  FROM dbo.user_sprints;
+          SELECT @NextId = ISNULL(MAX(id), 0) + 1
+          FROM dbo.user_sprints;
 
-  INSERT (
-    id,
-    user_id,
-    sprint_key,
-    data,
-    created_at,
-    updated_at
-  )
-  VALUES (
-    @NextId,
-    @user_id,
-    @sprint_key,
-    @data,
-    SYSUTCDATETIME(),
-    SYSUTCDATETIME()
-  );
+          INSERT INTO dbo.user_sprints (
+            id,
+            user_id,
+            sprint_key,
+            data,
+            created_at,
+            updated_at
+          )
+          VALUES (
+            @NextId,
+            @user_id,
+            @sprint_key,
+            @data,
+            SYSUTCDATETIME(),
+            SYSUTCDATETIME()
+          )
 
-END
-
+        END
       `);
 
     res.json({ ok: true });
