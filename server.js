@@ -1001,7 +1001,6 @@ app.get("/groups/by-code/:code", async (req, res) => {
     res.status(500).json({ error: "group lookup failed" });
   }
 });
-
 // ==============================
 // CREATE GROUP
 // ==============================
@@ -1020,21 +1019,32 @@ app.post("/groups", async (req, res) => {
       .input("code", sql.NVarChar(50), code)
       .input("created_by", sql.UniqueIdentifier, created_by)
       .query(`
+        DECLARE @NextId INT;
+
+        SELECT
+          @NextId = ISNULL(MAX(id), 0) + 1
+        FROM dbo.groups;
+
         INSERT INTO dbo.groups (
+          id,
           name,
           code,
           created_by,
           created_at,
           updated_at
         )
-        OUTPUT INSERTED.*
         VALUES (
+          @NextId,
           @name,
           @code,
           @created_by,
           GETDATE(),
           GETDATE()
-        )
+        );
+
+        SELECT *
+        FROM dbo.groups
+        WHERE id = @NextId;
       `);
 
     res.json(result.recordset[0]);
