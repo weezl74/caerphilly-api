@@ -1611,6 +1611,106 @@ app.post("/stories", async (req, res) => {
   }
 });
 // ==============================
+// SPRINTS - GET
+// ==============================
+app.get("/sprints", async (req, res) => {
+  try {
+    const { user_id } = req.query;
+
+    if (!user_id) {
+      return res.status(400).json({
+        error: "user_id required"
+      });
+    }
+
+    const pool = await getPool();
+
+    const result = await pool.request()
+      .input("user_id", sql.UniqueIdentifier, user_id)
+      .query(`
+        SELECT
+          user_id,
+          sprint_key,
+          data,
+          updated_at
+        FROM dbo.user_sprints
+        WHERE user_id = @user_id
+        ORDER BY sprint_key
+      `);
+
+    res.json(result.recordset);
+
+  } catch (err) {
+    console.error("sprints get error:", err);
+    res.status(500).json({
+      error: "sprints fetch failed"
+    });
+  }
+});
+
+// ==============================
+// SPRINTS - SAVE
+// ==============================
+app.post("/sprints/save", async (req, res) => {
+  try {
+    const {
+      user_id,
+      sprint_key,
+      data
+    } = req.body;
+
+    if (!user_id || !sprint_key) {
+      return res.status(400).json({
+        error: "user_id and sprint_key required"
+      });
+    }
+
+    const pool = await getPool();
+
+    await pool.request()
+      .input("user_id", sql.UniqueIdentifier, user_id)
+      .input("sprint_key", sql.NVarChar(64), sprint_key)
+      .input("data", sql.NVarChar(sql.MAX), data || "{}")
+      .query(`
+        MERGE dbo.user_sprints AS target
+        USING (
+          SELECT
+            @user_id AS user_id,
+            @sprint_key AS sprint_key
+        ) AS source
+        ON target.user_id = source.user_id
+        AND target.sprint_key = source.sprint_key
+
+        WHEN MATCHED THEN
+          UPDATE SET
+            data = @data,
+            updated_at = SYSUTCDATETIME()
+
+        WHEN NOT MATCHED THEN
+          INSERT (
+            user_id,
+            sprint_key,
+            data,
+            updated_at
+          )
+          VALUES (
+            @user_id,
+            @sprint_key,
+            @data,
+            SYSUTCDATETIME()
+          );
+      `);
+
+    res.json({ ok: true });
+
+  } catch (err) {
+    console.error("sprints save error:", err);
+    res.status(500).json({
+      error: "sprints save failed"
+    });
+  }
+});
+// ==============================
 // SERVER
 // ==============================
 const PORT = process.env.PORT || 10000;
